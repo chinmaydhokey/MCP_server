@@ -1,0 +1,43 @@
+# Code owners for QA Brain (chinmaydhokey/MCP_server).
+# GitHub requests a review from the owners of every path a pull request touches.
+# The last matching pattern wins. Per-workstream owners (A gateway/transports,
+# B store/healing/TIA, C mobile/parity, D runner/GitHub/dashboard/research) are
+# filled in at M1 when the team is assigned; until then both maintainers own
+# every path. See docs/roadmap.md for the workstream definitions.
+
+# Default: everything
+*                                   @chinmaydhokey @Siddharth-Basale
+
+# Workstream A — gateway and transports
+/packages/gateway/                  @chinmaydhokey @Siddharth-Basale
+/packages/adapter-playwright/       @chinmaydhokey @Siddharth-Basale
+/apps/qa-brain/                     @chinmaydhokey @Siddharth-Basale
+/deploy/                            @chinmaydhokey @Siddharth-Basale
+/docker/                            @chinmaydhokey @Siddharth-Basale
+
+# Workstream B — store, healing, test impact analysis
+/packages/core/                     @chinmaydhokey @Siddharth-Basale
+/packages/store/                    @chinmaydhokey @Siddharth-Basale
+/packages/test-format/              @chinmaydhokey @Siddharth-Basale
+/packages/healing/                  @chinmaydhokey @Siddharth-Basale
+
+# Workstream C — mobile and parity (package arrives in M6)
+/packages/adapter-appium/           @chinmaydhokey @Siddharth-Basale
+/.github/workflows/android-e2e.yml  @chinmaydhokey @Siddharth-Basale
+
+# Workstream D — runner, GitHub integration, dashboard, research
+/apps/runner/                       @chinmaydhokey @Siddharth-Basale
+/apps/action/                       @chinmaydhokey @Siddharth-Basale
+/research/                          @chinmaydhokey @Siddharth-Basale
+/examples/                          @chinmaydhokey @Siddharth-Basale
+
+# Cross-cutting: docs, ADRs, CI, security, community files need both maintainers
+/docs/                              @chinmaydhokey @Siddharth-Basale
+/docs/adr/                          @chinmaydhokey @Siddharth-Basale
+/.github/                           @chinmaydhokey @Siddharth-Basale
+/SECURITY.md                        @chinmaydhokey @Siddharth-Basale
+/LICENSE                            @chinmaydhokey @Siddharth-Basale
+/NOTICE                             @chinmaydhokey @Siddharth-Basale
+/package.json                       @chinmaydhokey @Siddharth-Basale
+/pnpm-lock.yaml                     @chinmaydhokey @Siddharth-Basale
+/pnpm-workspace.yaml                @chinmaydhokey @Siddharth-Basale

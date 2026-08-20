@@ -1,0 +1,24 @@
+# secrets — never commit
+.env
+.env.*
+!.env.example
+!deploy/.env.example
+
+# build & deps
+node_modules/
+dist/
+*.tsbuildinfo
+.turbo/
+
+# runtime state
+.qa-brain/
+test-results/
+playwright-report/
+coverage/
+
+# editors / os
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json

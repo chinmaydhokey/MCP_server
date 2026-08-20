@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas (GitHub Discussions)
+    url: https://github.com/chinmaydhokey/MCP_server/discussions
+    about: Ask how to configure a client, discuss a design, or propose a direction before opening a feature request.
+  - name: Report a security vulnerability (private)
+    url: https://github.com/chinmaydhokey/MCP_server/security/advisories/new
+    about: Prompt-injection escapes, tool allowlist bypasses, secret leakage in logs, SSRF through navigation. Never file these as public issues; see SECURITY.md.
+  - name: Client setup guide
+    url: https://github.com/chinmaydhokey/MCP_server/blob/main/docs/client-setup.md
+    about: Claude Code, Codex, Cursor, Claude Desktop and the zero-code CI profile.

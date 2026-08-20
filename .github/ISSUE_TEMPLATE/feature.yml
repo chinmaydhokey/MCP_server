@@ -1,0 +1,94 @@
+name: Feature request
+description: Propose a new tool, config option, adapter, integration or workflow for QA Brain.
+title: "feat: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check docs/roadmap.md first: many features are already scheduled for a milestone. If the request changes an accepted decision
+        (tool naming, storage engine, auth model, protocol era handling), it needs a new ADR in docs/adr — say so below.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What cannot be done today, or what is harder than it should be? Describe the testing scenario, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Tool name and input/output shape, config key, CLI flag, or adapter behavior. Tool names must match `^[a-zA-Z0-9_-]{1,64}$`, be at most 40 characters, and use the `web_`, `mobile_` or `qa_` prefix.
+      placeholder: |
+        New native tool `qa_parity_report` with input `{ run_id }` and output `{ test_key, platforms, steps[], summary }`.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Workstream
+      options:
+        - A — gateway and transports (registry, router, supervisor, stdio/HTTP, auth, deployment)
+        - B — store, healing, test impact analysis, flaky/quarantine
+        - C — mobile (appium-mcp adapter, parity)
+        - D — runner, GitHub integration, dashboard, benchmark harness
+        - Docs only
+        - Not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client / host this matters for
+      multiple: true
+      options:
+        - Claude Code
+        - Codex CLI
+        - Cursor
+        - Claude Desktop
+        - QA Brain runner (headless CI)
+        - All clients
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      multiple: true
+      options:
+        - stdio (local mode)
+        - http (hosted mode)
+        - Both
+  - type: input
+    id: upstream
+    attributes:
+      label: Upstream affected
+      placeholder: "playwright 1.62.1 / appium-mcp >=1.92 / Postgres MCP / none"
+  - type: textarea
+    id: tool-surface
+    attributes:
+      label: Effect on the default tool surface
+      description: The default `tools/list` is capped at 25 entries. Should the tool be listed, hidden-but-callable via `qa_call_tool`, or behind a config flag?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Including doing it outside QA Brain (prompt, client config, a separate MCP server).
+  - type: dropdown
+    id: adr
+    attributes:
+      label: Does this change an accepted ADR?
+      options:
+        - "No"
+        - "Yes — I will draft a superseding ADR"
+        - "Not sure"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I checked docs/roadmap.md and the cut line.
+          required: true
+        - label: I am willing to open a pull request for this.
+          required: false
