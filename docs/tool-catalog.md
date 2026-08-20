@@ -10,7 +10,7 @@ This catalog lists every tool an LLM can see or call through the QA Brain gatewa
 | Maximum public length | 40 characters | Design decision: Claude Code wraps names as `mcp__qa-brain__<tool>` (15 extra characters), so 40 keeps the wrapped name under 64 |
 | Proxied web tools | `web_` + upstream name with `browser_` stripped (`browser_click` → `web_click`) | MCP 2026-07-28 says aggregating proxies SHOULD prefix upstream tool names ([tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)) |
 | Native tools | `qa_*` | Design decision |
-| Future mobile tools | `mobile_*` (appium-mcp upstream, `appium_` stripped where present) | [ADR-0015](./adr/0015-mobile-appium-mcp.md) |
+| Future mobile tools | `mobile_*` (appium-mcp upstream, `appium_` stripped where present) | [ADR-0015](./adr/0015-mobile-via-appium-mcp-synthesized-refs-android-first.md) |
 | Collisions | Two public names equal, or a proxied name equal to a native name → startup error listing both sources; no shadowing, no silent rename | [Docker MCP Gateway v0.43.1](https://github.com/docker/mcp-gateway/releases/tag/v0.43.1) rule |
 | Ordering | `tools/list` sorted by name, `ttlMs: 300000`, `cacheScope: 'public'` | Deterministic order improves prompt-cache hits ([changelog](https://modelcontextprotocol.io/specification/2026-07-28/changelog)) |
 | Removal | Names are never removed from `tools/list` while the process lives; an unhealthy upstream answers with `isError` instead | Stale-history problem ([discussion #2036](https://github.com/modelcontextprotocol/modelcontextprotocol/discussions/2036)) |
@@ -72,7 +72,7 @@ Mints a run handle so that subsequent calls are grouped. Pass the handle in `_me
 { "run_id": "rn_0198f3b2c4d07a1e9c6b5f4a3d2e1c0b", "expires_at": "2026-08-21T10:00:00Z" }
 ```
 
-Handle format is `<kind>_<uuidv7>`; run handles expire after 24 hours and are owner-checked ([ADR-0005](./adr/0005-handles-not-sessions.md)).
+Handle format is `<kind>_<uuidv7>`; run handles expire after 24 hours and are owner-checked ([ADR-0005](./adr/0005-server-minted-handles-not-sessions.md)).
 
 ### `qa_run_finish`
 

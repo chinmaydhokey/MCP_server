@@ -70,6 +70,8 @@ export async function createSqliteStore(opts: SqliteStoreOptions): Promise<Store
     runs: sqliteRunRepository(db),
     handles: sqliteHandleRepository(db),
     async close() {
+      // Note: @libsql/client 0.17 keeps native statement handles alive until GC, so the file may stay
+      // locked briefly after close() on Windows. Nothing is left open at the libsql API level.
       client.close();
     },
   };

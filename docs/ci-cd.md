@@ -125,7 +125,7 @@ One GitHub-specific trap is worth recording: a tag pushed with the default `GITH
 
 ## 5. `android-e2e.yml`: emulator lane
 
-Android emulators need hardware acceleration; GitHub's x86 Ubuntu runners expose `/dev/kvm` while macOS arm64 runners do not support nested virtualization, so the lane is Ubuntu-only ([ReactiveCircus/android-emulator-runner README](https://github.com/ReactiveCircus/android-emulator-runner/blob/main/README.md), [runner-images](https://github.com/actions/runner-images)). The workflow is `workflow_dispatch`-only in M0 (input `api-level`, default `35`) and gains a weekly `schedule` in M6 when the appium-mcp adapter lands ([ADR-0015](./adr/0015-mobile-appium-mcp.md)).
+Android emulators need hardware acceleration; GitHub's x86 Ubuntu runners expose `/dev/kvm` while macOS arm64 runners do not support nested virtualization, so the lane is Ubuntu-only ([ReactiveCircus/android-emulator-runner README](https://github.com/ReactiveCircus/android-emulator-runner/blob/main/README.md), [runner-images](https://github.com/actions/runner-images)). The workflow is `workflow_dispatch`-only in M0 (input `api-level`, default `35`) and gains a weekly `schedule` in M6 when the appium-mcp adapter lands ([ADR-0015](./adr/0015-mobile-via-appium-mcp-synthesized-refs-android-first.md)).
 
 ```yaml
 steps:

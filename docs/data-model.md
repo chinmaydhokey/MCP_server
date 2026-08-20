@@ -1,6 +1,6 @@
 # Data model
 
-QA Brain persists everything the LLM cannot remember between calls: what was executed (`action_log`), which runs and attempts happened (`run`, `run_attempt`, `step_result`), the intent-level tests and their immutable revisions (`test_case`, `test_case_revision`, `test_step`), the multi-signal locator cache that makes replay LLM-free (`step_fingerprint`), and the review queue for healing (`heal_proposal`). The schema is defined once in TypeScript with [Drizzle ORM](https://orm.drizzle.team/docs/overview) 0.45.2 and compiled into two dialects: SQLite through `@libsql/client` 0.17.4 for local stdio mode and PostgreSQL 18 through `pg` 8.23.0 for hosted mode. This document catalogues all 17 tables, the JSON shapes inside them, the migration strategy, and retention rules. The algorithms that read and write these tables are in [self-healing](./self-healing.md), [impact analysis](./impact-analysis.md), and [flaky and quarantine](./flaky-and-quarantine.md); the runtime that produces `action_log` rows is in [ARCHITECTURE.md](../ARCHITECTURE.md); the storage decision is [ADR-0006](./adr/0006-store-sqlite-local-postgres-hosted.md).
+QA Brain persists everything the LLM cannot remember between calls: what was executed (`action_log`), which runs and attempts happened (`run`, `run_attempt`, `step_result`), the intent-level tests and their immutable revisions (`test_case`, `test_case_revision`, `test_step`), the multi-signal locator cache that makes replay LLM-free (`step_fingerprint`), and the review queue for healing (`heal_proposal`). The schema is defined once in TypeScript with [Drizzle ORM](https://orm.drizzle.team/docs/overview) 0.45.2 and compiled into two dialects: SQLite through `@libsql/client` 0.17.4 for local stdio mode and PostgreSQL 18 through `pg` 8.23.0 for hosted mode. This document catalogues all 17 tables, the JSON shapes inside them, the migration strategy, and retention rules. The algorithms that read and write these tables are in [self-healing](./self-healing.md), [impact analysis](./impact-analysis.md), and [flaky and quarantine](./flaky-and-quarantine.md); the runtime that produces `action_log` rows is in [ARCHITECTURE.md](../ARCHITECTURE.md); the storage decision is [ADR-0006](./adr/0006-store-sqlite-local-postgres-hosted-drizzle.md).
 
 ## 1. Conventions
 
@@ -90,7 +90,7 @@ Column lists use the abbreviations from §1 (`id` = UUIDv7 PK unless stated, `ts
 
 Indexes: `api_key_project_idx (project_id) WHERE revoked_at IS NULL`.
 
-**`handle`** — server-minted cross-call state ([ADR-0005](./adr/0005-server-minted-handles.md)). The 2026-07-28 MCP revision has no sessions, so every run, browser, device, or snapshot reference is an ordinary argument that the gateway validates against this table.
+**`handle`** — server-minted cross-call state ([ADR-0005](./adr/0005-server-minted-handles-not-sessions.md)). The 2026-07-28 MCP revision has no sessions, so every run, browser, device, or snapshot reference is an ordinary argument that the gateway validates against this table.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -251,7 +251,7 @@ Indexes: `run_attempt_case_branch_platform_idx (test_case_id, branch, platform, 
 
 Indexes: `step_result_fingerprint_idx (fingerprint_id)`, `step_result_step_status_idx (step_id, status)`.
 
-**`artifact`** — metadata only; bytes live on the filesystem (`artifacts.driver: 'fs'`) or an S3-compatible bucket (`'s3'`, see [ADR-0008](./adr/0008-artifacts-s3-compatible.md)).
+**`artifact`** — metadata only; bytes live on the filesystem (`artifacts.driver: 'fs'`) or an S3-compatible bucket (`'s3'`, see [ADR-0008](./adr/0008-artifacts-on-s3-compatible-storage.md)).
 
 | Column | Type | Notes |
 |---|---|---|
@@ -300,7 +300,7 @@ Indexes: `action_log_run_ts_idx (run_id, ts_start)`, `action_log_ts_idx (ts_star
 
 ### 3.6 Healing, flakiness, quarantine, impact
 
-**`heal_proposal`** — healing never edits a test; it produces a reviewable proposal ([ADR-0009](./adr/0009-self-healing-tiered-proposals.md), [self-healing](./self-healing.md)).
+**`heal_proposal`** — healing never edits a test; it produces a reviewable proposal ([ADR-0009](./adr/0009-self-healing-as-tiered-proposals-with-approval.md), [self-healing](./self-healing.md)).
 
 | Column | Type | Notes |
 |---|---|---|

@@ -231,10 +231,10 @@ describe('sqlite adapter (file URL)', () => {
   });
 
   afterAll(async () => {
-    // libsql may release the file handle a little after close() on Windows; retry, then give up quietly
-    // (a leaked temp dir is not a test failure).
+    // @libsql/client 0.17 keeps native statement handles alive until GC even after close(), so on Windows
+    // the .db file can still be EBUSY here. Try once and move on — a leaked temp file is not a test failure.
     try {
-      await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      await rm(dir, { recursive: true, force: true, maxRetries: 0 });
     } catch {
       /* ignore */
     }

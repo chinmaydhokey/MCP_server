@@ -153,11 +153,11 @@ The 2026-07-28 revision removed the `initialize` handshake and protocol sessions
 - **Upstream (client side).** `new Client(info, {versionNegotiation: {mode:'auto'}})` with a `prior` hint from the `EraCache`; the negotiated era is recorded per call in `action_log.protocol_era`.
 - **One Router for both.** MRTR fields (`inputResponses`, `requestState`) are stripped before forwarding; `_meta` is reduced to the W3C trace keys plus the SDK's protocol keys.
 
-The rule is recorded in [ADR-0003](./docs/adr/0003-mcp-2026-07-28-dual-era.md) and tested with a fake upstream served in both eras.
+The rule is recorded in [ADR-0003](./docs/adr/0003-target-mcp-2026-07-28-dual-era.md) and tested with a fake upstream served in both eras.
 
 ### 6.2 The handles-not-sessions rule
 
-Because `Mcp-Session-Id` is gone and `tools/list` MUST NOT vary per connection ([tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)), any state that must survive across calls is a server-minted handle passed back as an ordinary argument. Handles are `<kind>_<uuidv7>` (`rn_0198…` for runs; `bh_`, `dh_`, `sn_` reserved for browser, device, and snapshot; `lock` is the fifth kind), stored in table `handle` with owner, TTL, and state, and verified against the calling principal on every use. In M0 only `qa_run_start` mints a handle. Per-run browser isolation (one Playwright child per `bh_` handle, pooled) is an M4+ feature; in M0 one child per process means one shared browser context, which is adequate for a single developer over stdio and is the reason the HTTP mode stays behind a bearer token ([ADR-0005](./docs/adr/0005-handles-not-sessions.md)).
+Because `Mcp-Session-Id` is gone and `tools/list` MUST NOT vary per connection ([tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)), any state that must survive across calls is a server-minted handle passed back as an ordinary argument. Handles are `<kind>_<uuidv7>` (`rn_0198…` for runs; `bh_`, `dh_`, `sn_` reserved for browser, device, and snapshot; `lock` is the fifth kind), stored in table `handle` with owner, TTL, and state, and verified against the calling principal on every use. In M0 only `qa_run_start` mints a handle. Per-run browser isolation (one Playwright child per `bh_` handle, pooled) is an M4+ feature; in M0 one child per process means one shared browser context, which is adequate for a single developer over stdio and is the reason the HTTP mode stays behind a bearer token ([ADR-0005](./docs/adr/0005-server-minted-handles-not-sessions.md)).
 
 ## 7. Local and hosted modes
 
@@ -193,7 +193,7 @@ The same image serves both: `qa-brain serve --transport stdio` inside `docker ru
 | `docs/`, `docs/adr/` | This design set and ADRs 0001 to 0015 |
 | `research/bench` | Benchmark harness design for the thesis track ([docs/research-track.md](./docs/research-track.md)) |
 
-Toolchain: Node ≥ 22.12, pnpm 10.34.5, TypeScript 5.9.3 (ESM, `module: NodeNext`), tsup 8.5.1, vitest 4.1.11 (projects `unit` and `e2e`), Biome 2.5.9, changesets 3.0.1, `@modelcontextprotocol/{server,client,core,node}` 2.0.0, zod 4.4.3 ([ADR-0002](./docs/adr/0002-typescript-monorepo.md)).
+Toolchain: Node ≥ 22.12, pnpm 10.34.5, TypeScript 5.9.3 (ESM, `module: NodeNext`), tsup 8.5.1, vitest 4.1.11 (projects `unit` and `e2e`), Biome 2.5.9, changesets 3.0.1, `@modelcontextprotocol/{server,client,core,node}` 2.0.0, zod 4.4.3 ([ADR-0002](./docs/adr/0002-typescript-monorepo-pnpm-node22-esm.md)).
 
 ## 9. Interfaces later milestones plug into
 
@@ -259,11 +259,11 @@ export interface ImpactAnalyzer {
 }
 ```
 
-Milestone ownership: `UpstreamAdapter` gets its second implementation in M6 (appium-mcp, [ADR-0015](./docs/adr/0015-mobile-appium-mcp.md)); `StoreAdapter` gains `tests` in M1 and `healProposals` in M3 ([ADR-0006](./docs/adr/0006-store-sqlite-and-postgres.md)); `ArtifactStore` goes from `fs` to `s3` in M5 ([ADR-0008](./docs/adr/0008-artifacts-s3-compatible.md)); `LlmDriver` arrives with the runner in M5 on the official `@anthropic-ai/sdk` and the `openai` SDK ([ADR-0014](./docs/adr/0014-provider-agnostic-llm-runner.md)); `HealStrategy` T0/T1 in M3 and T2/T3 in M6 ([ADR-0009](./docs/adr/0009-self-healing-tiered-proposals.md)); `ImpactAnalyzer` layers in M4 ([ADR-0010](./docs/adr/0010-test-impact-analysis-layered-union.md)).
+Milestone ownership: `UpstreamAdapter` gets its second implementation in M6 (appium-mcp, [ADR-0015](./docs/adr/0015-mobile-via-appium-mcp-synthesized-refs-android-first.md)); `StoreAdapter` gains `tests` in M1 and `healProposals` in M3 ([ADR-0006](./docs/adr/0006-store-sqlite-local-postgres-hosted-drizzle.md)); `ArtifactStore` goes from `fs` to `s3` in M5 ([ADR-0008](./docs/adr/0008-artifacts-on-s3-compatible-storage.md)); `LlmDriver` arrives with the runner in M5 on the official `@anthropic-ai/sdk` and the `openai` SDK ([ADR-0014](./docs/adr/0014-provider-agnostic-llm-runner.md)); `HealStrategy` T0/T1 in M3 and T2/T3 in M6 ([ADR-0009](./docs/adr/0009-self-healing-as-tiered-proposals-with-approval.md)); `ImpactAnalyzer` layers in M4 ([ADR-0010](./docs/adr/0010-test-impact-analysis-layered-union.md)).
 
 ## 10. Security posture in one paragraph
 
-Tools are default-deny: an upstream exposes nothing until its adapter's `toolTable()` or the config's `tools.allow` names it, and `browser_run_code_unsafe` and `browser_evaluate` are blocked because Playwright's own config calls them "RCE-equivalent" and states that its guardrails are "convenience, not boundaries" ([config.d.ts](https://raw.githubusercontent.com/microsoft/playwright/main/packages/playwright-core/src/tools/mcp/config.d.ts)). Inbound bearer tokens are never forwarded upstream. Arguments are logged by shape or redacted, never raw. HTTP binds loopback and requires a bearer token unless explicitly told otherwise, following the [Docker MCP Gateway v0.43.1](https://github.com/docker/mcp-gateway/releases/tag/v0.43.1) hardening list. The full T1 to T15 table is in [docs/security-threat-model.md](./docs/security-threat-model.md) and [ADR-0011](./docs/adr/0011-security-posture.md).
+Tools are default-deny: an upstream exposes nothing until its adapter's `toolTable()` or the config's `tools.allow` names it, and `browser_run_code_unsafe` and `browser_evaluate` are blocked because Playwright's own config calls them "RCE-equivalent" and states that its guardrails are "convenience, not boundaries" ([config.d.ts](https://raw.githubusercontent.com/microsoft/playwright/main/packages/playwright-core/src/tools/mcp/config.d.ts)). Inbound bearer tokens are never forwarded upstream. Arguments are logged by shape or redacted, never raw. HTTP binds loopback and requires a bearer token unless explicitly told otherwise, following the [Docker MCP Gateway v0.43.1](https://github.com/docker/mcp-gateway/releases/tag/v0.43.1) hardening list. The full T1 to T15 table is in [docs/security-threat-model.md](./docs/security-threat-model.md) and [ADR-0011](./docs/adr/0011-security-posture-default-deny-no-passthrough-egress-control.md).
 
 ## 11. What is NOT in M0
 
@@ -280,4 +280,4 @@ M0 is a blueprint plus a scaffold whose smoke test proves one path end to end: C
 - **Reports, visual regression, issue filing, Tasks extension** (`qa_report_generate`, `qa_visual_compare`, `qa_issue_file`, `qa_run_suite`): M2 onward.
 - **`--watch` config reload, per-principal `tools/list` filtering (`cacheScope: 'private'`), OAuth 2.1, rate limiting**: M5 to M7.
 
-Related reading: [docs/tool-catalog.md](./docs/tool-catalog.md), [docs/data-model.md](./docs/data-model.md), [docs/observability.md](./docs/observability.md), [docs/ci-cd.md](./docs/ci-cd.md), [ADR-0001](./docs/adr/0001-gateway-on-ts-sdk-v2-low-level-server.md) (why a gateway on the low-level server), [ADR-0004](./docs/adr/0004-tool-namespacing-and-curated-surface.md) (naming and the 22-tool surface).
+Related reading: [docs/tool-catalog.md](./docs/tool-catalog.md), [docs/data-model.md](./docs/data-model.md), [docs/observability.md](./docs/observability.md), [docs/ci-cd.md](./docs/ci-cd.md), [ADR-0001](./docs/adr/0001-gateway-on-mcp-sdk-v2-low-level-server.md) (why a gateway on the low-level server), [ADR-0004](./docs/adr/0004-tool-namespacing-and-curated-surface.md) (naming and the 22-tool surface).
