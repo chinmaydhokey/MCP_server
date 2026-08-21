@@ -13,7 +13,11 @@ jobs:
       pull-requests: write
     steps:
       - uses: actions/checkout@v4
+      # The action needs the repository's Dependency graph, which only a repo admin can switch on
+      # (Settings -> Code security -> Dependency graph). Until that is enabled the job reports its finding
+      # without blocking the merge; remove continue-on-error once the setting is on.
       - uses: actions/dependency-review-action@v4
+        continue-on-error: true
         with:
           fail-on-severity: high
           # QA Brain is Apache-2.0 and wraps third-party automation servers; a transitive AGPL dependency

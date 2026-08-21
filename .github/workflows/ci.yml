@@ -66,9 +66,12 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # `playwright` is a dependency of @qa-brain/adapter-playwright, not of the workspace root, so both the
+      # version probe and the install must run in that package (pnpm keeps node_modules strict).
       # The browser revision is tied to the pinned playwright version, so the cache key follows it.
       - id: pw
         shell: bash
+        working-directory: packages/adapter-playwright
         run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
@@ -77,7 +80,7 @@ jobs:
             ~/AppData/Local/ms-playwright
           key: ms-playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - name: Install Chromium
-        run: pnpm exec playwright install --with-deps chromium
+        run: pnpm --filter @qa-brain/adapter-playwright exec playwright install --with-deps chromium
       - run: pnpm build
       - name: Smoke test (real browser through the gateway)
         run: pnpm smoke
