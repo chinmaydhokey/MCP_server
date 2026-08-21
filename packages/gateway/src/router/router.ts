@@ -53,6 +53,16 @@ export function capResult(result: ToolCallResult, max: number): ToolCallResult {
   return { ...result, content, _meta: { ...(result._meta ?? {}), 'in.qabrain/truncated': removed } };
 }
 
+/**
+ * Strips QA Brain's own bookkeeping arguments before forwarding to an upstream. `run_id` is ours: upstream
+ * servers never declared it, and a server stricter than Playwright MCP would reject the unknown property.
+ */
+function forwardedArgs(args: unknown): Record<string, unknown> {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return {};
+  const { run_id: _runId, ...rest } = args as Record<string, unknown>;
+  return rest;
+}
+
 function runIdFrom(args: unknown, meta: Record<string, unknown> | undefined): string | null {
   const fromMeta = meta?.[RUN_ID_META_KEY];
   if (typeof fromMeta === 'string' && isHandleOfKind(fromMeta, 'run')) return fromMeta;
@@ -170,15 +180,11 @@ export class Router {
     if (!manager)
       return finish(errorResult('internal', 'tool has no upstream manager'), 'internal', 'no manager');
     try {
-      const result = await manager.callTool(
-        tool.upstreamName,
-        (input.args ?? {}) as Record<string, unknown>,
-        {
-          signal: input.signal,
-          timeoutMs: callTimeoutMs,
-          meta: outboundMeta(trace),
-        },
-      );
+      const result = await manager.callTool(tool.upstreamName, forwardedArgs(input.args), {
+        signal: input.signal,
+        timeoutMs: callTimeoutMs,
+        meta: outboundMeta(trace),
+      });
       return finish(
         result,
         result.isError ? 'upstream_error' : null,
