@@ -3,6 +3,9 @@
 .env.*
 !.env.example
 !deploy/.env.example
+# Docker secret files mounted by deploy/docker-compose*.yml (QA_BRAIN_SECRETS_DIR).
+# Better still: point QA_BRAIN_SECRETS_DIR outside the working tree entirely.
+deploy/secrets/
 
 # build & deps
 node_modules/
