@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>QA Brain Example Shop</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 40rem; line-height: 1.5; }
+      nav a { margin-right: 1rem; }
+      .card { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; margin: 1rem 0; }
+      button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+      #cart-badge { font-weight: bold; }
+    </style>
+  </head>
+  <body>
+    <h1>QA Brain Example Shop</h1>
+    <nav>
+      <a href="/index.html">Home</a>
+      <a href="/form.html">Sign in</a>
+      <a href="/about.html">About</a>
+      <a href="/cart.html" id="cart-link">Cart (<span id="cart-badge">0</span>)</a>
+    </nav>
+
+    <p>This page exists so QA Brain's smoke test can drive a real browser without reaching the internet.</p>
+
+    <div class="card">
+      <h2>Blue Hoodie</h2>
+      <p>A comfortable hoodie. £42.00</p>
+      <button type="button" id="add-to-cart" data-testid="add-to-cart">Add to cart</button>
+      <p id="status" role="status"></p>
+    </div>
+
+    <script>
+      const badge = document.getElementById('cart-badge');
+      const status = document.getElementById('status');
+      document.getElementById('add-to-cart').addEventListener('click', () => {
+        badge.textContent = String(Number(badge.textContent) + 1);
+        status.textContent = 'Added to cart';
+      });
+    </script>
+  </body>
+</html>

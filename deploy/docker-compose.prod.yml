@@ -1,0 +1,235 @@
+# QA Brain -- production overlay for a single VM.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.yml logs migrate    # must end with "applied N migrations"
+#
+# Optional trace backend (docs/deployment.md section 3.1 lists Tempo + Grafana as a profile):
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile observability up -d
+#
+# What this overlay adds:
+#   1. Caddy, terminating TLS on 80/443 -- the only published ports in the entire stack
+#   2. every third-party image pinned by digest, not just by tag
+#   3. Tempo + Grafana behind the `observability` profile, and the collector pointed at Tempo
+#   4. tighter limits, and log level down to info
+#
+# WHY DIGESTS: a tag is a mutable pointer. `postgres:18` today and `postgres:18` after the
+# next point release are different bytes, and `docker compose pull` will happily swap them
+# under a running stack. Renovate's `docker:pinDigests` preset opens a PR when a digest moves,
+# so upgrades become reviewable commits: `git pull && docker compose up -d` deploys exactly
+# what git says. No Watchtower, no :latest (docs/deployment.md section 8).
+#
+# The two first-party images are the exception below -- see the comment on `qa-brain`.
+#
+# M0 STATUS: design artefact. Hosted mode is wired up in milestone M5 (Feb 2027).
+
+name: qa-brain
+
+services:
+
+  # -------------------------------------------------------------------------------------
+  # First-party images.
+  #
+  # These carry no digest yet because nothing has been published to GHCR: `docker.yml`
+  # (docs/ci-cd.md section 3) builds linux/amd64 + linux/arm64 with provenance and SBOM
+  # attestations, signs keylessly with cosign, and writes the digest to the job summary.
+  # Copy that digest into deploy/.env as QA_BRAIN_IMAGE_DIGEST at the first real release and
+  # this becomes a digest pin like everything else:
+  #
+  #   QA_BRAIN_IMAGE_DIGEST=@sha256:....
+  #
+  # Verify before deploying:
+  #   cosign verify ghcr.io/chinmaydhokey/qa-brain@sha256:... \
+  #     --certificate-identity-regexp 'https://github.com/chinmaydhokey/MCP_server/.github/workflows/docker.yml@.*' \
+  #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+  # -------------------------------------------------------------------------------------
+  migrate:
+    image: ${QA_BRAIN_IMAGE:-ghcr.io/chinmaydhokey/qa-brain}:${QA_BRAIN_VERSION:?set QA_BRAIN_VERSION in deploy/.env}${QA_BRAIN_IMAGE_DIGEST:-}
+
+  qa-brain:
+    image: ${QA_BRAIN_IMAGE:-ghcr.io/chinmaydhokey/qa-brain}:${QA_BRAIN_VERSION:?set QA_BRAIN_VERSION in deploy/.env}${QA_BRAIN_IMAGE_DIGEST:-}
+    environment:
+      QA_BRAIN_LOG_LEVEL: ${QA_BRAIN_LOG_LEVEL:-info}
+      # Shape only: no argument values reach the action log in a multi-tenant deployment.
+      QA_BRAIN_LOG_ARGS_MODE: shape
+    # No `ports`. The dev overlay's 127.0.0.1:8080 publication is absent here by omission,
+    # and Compose has no way to un-publish a port from a base file -- which is precisely why
+    # the base file publishes nothing and dev adds it.
+    mem_limit: 1g
+    cpus: 1
+    pids_limit: 256
+
+  worker:
+    image: ${QA_BRAIN_IMAGE:-ghcr.io/chinmaydhokey/qa-brain}:${QA_BRAIN_VERSION:?set QA_BRAIN_VERSION in deploy/.env}${QA_BRAIN_IMAGE_DIGEST:-}
+    environment:
+      QA_BRAIN_LOG_LEVEL: ${QA_BRAIN_LOG_LEVEL:-info}
+      QA_BRAIN_LOG_ARGS_MODE: shape
+    mem_limit: 1g
+    cpus: 1
+
+  playwright-mcp:
+    image: ${QA_BRAIN_BROWSER_IMAGE:-ghcr.io/chinmaydhokey/qa-brain-browser}:${QA_BRAIN_BROWSER_VERSION:-1.62.1}${QA_BRAIN_BROWSER_IMAGE_DIGEST:-}
+    # Sizing note (docs/deployment.md section 8): on a 4 vCPU / 8 GB VM these two cores and
+    # 2 GB carry two concurrent browser contexts. Scale worker replicas first, then this.
+    mem_limit: 2g
+    cpus: 2
+
+  # -------------------------------------------------------------------------------------
+  # Third-party images, digest-pinned. Digests resolved 2026-08-21 for the multi-arch index
+  # (both linux/amd64 and linux/arm64 resolve through them).
+  # -------------------------------------------------------------------------------------
+  postgres:
+    image: postgres:18.6@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+    mem_limit: 1g
+    cpus: 2
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.43@sha256:7bea581f48155c069d3c725e60c386c88210c67cde8bce412344ff6ebea264da
+    mem_limit: 1g
+    cpus: 1
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.159.0@sha256:1f2c54a30e713fac6b3ae77a1ec84010c2007e29ced8ec666214fc2f6739c1cc
+    environment:
+      # Tempo instead of Jaeger. If the `observability` profile is not started, this endpoint
+      # simply does not resolve and the collector logs export failures without dropping the
+      # metrics pipeline -- set QA_BRAIN_OTEL_EXPORTER=none on the app services if you run
+      # prod without a trace backend at all.
+      QA_BRAIN_OTEL_TRACES_ENDPOINT: ${QA_BRAIN_OTEL_TRACES_ENDPOINT:-tempo:4317}
+    mem_limit: 512m
+    cpus: 1
+
+  # -------------------------------------------------------------------------------------
+  # caddy -- TLS termination and the only door into the stack.
+  #
+  # Caddy terminates TLS and nothing else: it does not rewrite MCP headers, and the gateway
+  # still validates Host and Origin itself (docs/security-threat-model.md section 7).
+  # -------------------------------------------------------------------------------------
+  caddy:
+    image: caddy:2.11.4@sha256:df7f1c2fb114453b951de51a98efc010db1655a92c2e86be6706714e2417a78d
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    # The one capability anything in this stack keeps. Binding 80/443 as a non-root process
+    # needs CAP_NET_BIND_SERVICE; the alternative (running Caddy as root) is worse.
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      QA_BRAIN_PUBLIC_HOST: ${QA_BRAIN_PUBLIC_HOST:?set QA_BRAIN_PUBLIC_HOST in deploy/.env}
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL:?set CADDY_ACME_EMAIL in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      # QUIC/HTTP3. Harmless to publish and Caddy enables h3 by default.
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # ACME account keys and issued certificates. Losing caddy_data means re-issuing every
+      # certificate on the next start, which Let's Encrypt rate-limits.
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - edge
+    healthcheck:
+      # Caddy's admin API on loopback; the image is Alpine-based so busybox wget exists.
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      qa-brain:
+        condition: service_healthy
+    mem_limit: 256m
+    cpus: 1
+
+  # -------------------------------------------------------------------------------------
+  # tempo + grafana -- optional prod trace backend, `--profile observability`.
+  # Both are on the internal `data` network; Grafana is reached through Caddy or an SSH
+  # tunnel, never published.
+  # -------------------------------------------------------------------------------------
+  tempo:
+    profiles: ["observability"]
+    image: grafana/tempo:2.10.8@sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      # Operator-supplied: Tempo's own config is deployment-specific (retention, storage
+      # backend) and is deliberately not templated here.
+      - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    networks:
+      - data
+    healthcheck:
+      disable: true
+    mem_limit: 1g
+    cpus: 1
+
+  grafana:
+    profiles: ["observability"]
+    image: grafana/grafana:13.2.0@sha256:3fd54ae1214669f8355f065ec9f6445d5279a3d77095ab048ca045685272429b
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    secrets:
+      - grafana_admin_password
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - data
+    healthcheck:
+      disable: true
+    depends_on:
+      tempo:
+        condition: service_started
+    mem_limit: 512m
+    cpus: 1
+
+volumes:
+  caddy_data:
+  caddy_config:
+  tempo_data:
+  grafana_data:
+
+secrets:
+  grafana_admin_password:
+    file: ${QA_BRAIN_SECRETS_DIR:-./secrets}/grafana_admin_password

@@ -1,0 +1,124 @@
+name: Heal false positive
+description: A self-healing proposal picked the wrong element, weakened a check, or should not have been proposed at all.
+title: "heal: false positive on "
+labels: ["healing", "false-positive", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every confirmed false positive becomes a regression fixture in `packages/healing` and a benchmark case in `research/bench`.
+        First mark the proposal rejected with `qa_heal_review({ id, decision: "rejected", reason })` so the scorer excludes that
+        candidate for this step; then fill in this form from the output of `qa_heal_show({ id })`.
+  - type: input
+    id: test-key
+    attributes:
+      label: Test key
+      description: The `id:` of the YAML test (`test_case.key`), e.g. `checkout/add-to-cart`.
+    validations:
+      required: true
+  - type: input
+    id: step
+    attributes:
+      label: Step
+      description: Step ordinal and intent text from the test, e.g. `3 — click "Add to cart"`.
+    validations:
+      required: true
+  - type: input
+    id: proposal-id
+    attributes:
+      label: Heal proposal id
+      description: The `heal_proposal.id` (UUIDv7) shown by `qa_heal_list`.
+      placeholder: "0198f2a0-4c1e-7b3a-9d2e-5f6a7b8c9d0e"
+    validations:
+      required: true
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Tier that produced the proposal
+      options:
+        - T0 deterministic chain
+        - T1 weighted similarity
+        - T2 LLM re-rank
+        - T3 visual tie-break
+        - Unknown
+    validations:
+      required: true
+  - type: input
+    id: score
+    attributes:
+      label: Score and margin
+      description: From the proposal (`score`, `margin`). T1 accepts only when score >= 0.6 and margin >= 0.1.
+      placeholder: "score 0.71, margin 0.12"
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - web
+        - android
+        - ios
+    validations:
+      required: true
+  - type: textarea
+    id: old-locator
+    attributes:
+      label: Old locator (from the last passing run)
+      description: The `locator` and `locator_strategy` of the superseded `step_fingerprint`, plus the key signals (role, name, testid, html_id, text).
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: new-locator
+    attributes:
+      label: Healed locator that is wrong
+      description: The proposed `locator`, its strategy, and what element it actually resolves to.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: correct
+    attributes:
+      label: Correct target
+      description: What the step should have resolved to (locator or description). Write "element no longer exists — the test should fail" if healing was wrong in principle.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of false positive
+      options:
+        - Wrong sibling in a list or grid
+        - Different element with similar text
+        - Assertion or expectation was weakened
+        - Healed a negative / absence check
+        - Element was intentionally removed (should be a real failure)
+        - Proposal on an infra / timing / test-data failure, not a selector failure
+        - Auto-approved when it should have needed review
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: |
+        Before/after screenshots or crops, the `web_snapshot` excerpt around both elements, the candidate list with per-attribute scores
+        from `qa_heal_show`, the app commit that triggered the heal, and the `run_id`. Attach files by dragging them into this box.
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      placeholder: "qa-brain 0.3.0, playwright 1.62.1, client Claude Code, transport stdio"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I rejected the proposal with `qa_heal_review` (or it is still `proposed` and I am leaving it for triage).
+          required: false
+        - label: The fingerprint signals above contain no secrets or private data.
+          required: true

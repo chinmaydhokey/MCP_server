@@ -1,0 +1,12 @@
+{
+  "name": "@qa-brain/example-static-site",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Tiny static web app used by the QA Brain smoke test",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./serve.js",
+  "scripts": {
+    "start": "node serve.js"
+  }
+}

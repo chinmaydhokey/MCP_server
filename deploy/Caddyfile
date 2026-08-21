@@ -1,0 +1,93 @@
+# QA Brain -- Caddy site configuration (prod overlay only).
+#
+# Mounted read-only at /etc/caddy/Caddyfile. Caddy terminates TLS and forwards to the
+# gateway on the `edge` network. It does NOT rewrite MCP headers and it does NOT authenticate:
+# the bearer token is verified by the gateway, and Host/Origin validation happens there too
+# (docs/security-threat-model.md section 7). Caddy's job is exactly three things -- TLS, a
+# body cap, and not buffering the response.
+#
+# M0 STATUS: design artefact. The hosted HTTP server is wired up in milestone M5 (Feb 2027).
+#
+# `{$VAR:default}` is Caddy's environment syntax; the values come from the `caddy` service's
+# `environment:` block in deploy/docker-compose.prod.yml, which reads them from deploy/.env.
+
+{
+	# ACME contact for expiry notices. Automatic HTTPS handles issuance and renewal, so
+	# there is no certificate to rotate by hand and no cron job to forget.
+	email {$CADDY_ACME_EMAIL}
+
+	# Admin API on loopback inside the container. The compose healthcheck probes
+	# http://127.0.0.1:2019/config/; it is not reachable from any network.
+	admin 127.0.0.1:2019
+
+	servers {
+		# HTTP/3 is on by default; stated here so the published 443/udp port has an
+		# obvious reason to exist.
+		protocols h1 h2 h3
+	}
+}
+
+{$QA_BRAIN_PUBLIC_HOST:qa.example.com} {
+
+	# JSON to stdout so Docker's json-file driver rotates it with everything else
+	# (10 MB x 3, deploy/docker-compose.yml).
+	log {
+		output stdout
+		format json
+	}
+
+	# 100 MB request cap. The gateway itself caps bodies at 1 MiB in Node; this is the outer
+	# limit that stops a large upload from being buffered at all. Without it an unauthenticated
+	# POST can make Caddy spool an arbitrary amount to disk before the gateway ever sees a
+	# bearer token -- a pre-auth denial-of-service on the VM's disk.
+	request_body {
+		max_size 100MB
+	}
+
+	header {
+		# The certificate is real and automatic, so committing to HTTPS costs nothing.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		# Do not advertise the proxy version.
+		-Server
+	}
+
+	# Only /mcp is proxied. /healthz and /readyz stay internal: they are the Compose
+	# healthcheck's business, and /readyz names upstream state, which is not something to
+	# publish to the internet.
+	handle /mcp* {
+		reverse_proxy qa-brain:8080 {
+			# THE IMPORTANT LINE. -1 disables response buffering entirely, so Streamable
+			# HTTP responses reach the client as the gateway writes them. With Caddy's
+			# default buffering a long-running tool call looks like a hung connection, and
+			# any SSE-style incremental response is delivered only at the end.
+			flush_interval -1
+
+			# Belt and braces for whatever sits in front of Caddy -- a CDN, a corporate
+			# nginx, a PaaS router. `+` adds the header only when the gateway did not
+			# already send it, so the upstream's own value passes through unchanged.
+			header_down +X-Accel-Buffering no
+
+			# The gateway derives its Host/Origin allow-list from QA_BRAIN_PUBLIC_URL and
+			# answers 403 on a mismatch, so the original Host must survive the hop.
+			# Caddy preserves it by default; X-Forwarded-* are added for completeness.
+			header_up X-Forwarded-Proto {scheme}
+			header_up X-Real-IP {remote_host}
+
+			# A tool call may legitimately take a minute (server.callTimeoutMs = 60000).
+			# Give the proxy headroom so the gateway's own timeout is the one that fires
+			# and the client gets a proper JSON-RPC error instead of a 502.
+			transport http {
+				read_timeout 300s
+				write_timeout 300s
+				dial_timeout 5s
+			}
+		}
+	}
+
+	# Everything else, including `/`, is closed. An MCP endpoint is not a website.
+	handle {
+		respond "not found" 404
+	}
+}

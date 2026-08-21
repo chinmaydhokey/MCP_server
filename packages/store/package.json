@@ -1,0 +1,42 @@
+{
+  "name": "@qa-brain/store",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QA Brain persistence: Drizzle schemas (SQLite + Postgres), adapters, migrations",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "migrations"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "db:generate:sqlite": "drizzle-kit generate --config drizzle.config.sqlite.ts",
+    "db:generate:pg": "drizzle-kit generate --config drizzle.config.pg.ts",
+    "db:generate": "pnpm run db:generate:sqlite && pnpm run db:generate:pg"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "dependencies": {
+    "@qa-brain/core": "workspace:*",
+    "drizzle-orm": "0.45.2",
+    "pg": "8.23.0",
+    "uuidv7": "1.2.1",
+    "@libsql/client": "0.17.4"
+  },
+  "devDependencies": {
+    "drizzle-kit": "0.31.10",
+    "@types/pg": "8.23.1"
+  }
+}

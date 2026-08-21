@@ -1,0 +1,70 @@
+# Build context filter for docker/qa-brain.Dockerfile and docker/browser.Dockerfile.
+# Both are built with `context: .` from the repository root (see docs/ci-cd.md section 2,
+# the `docker-build` job), so this file decides what BuildKit uploads to the daemon.
+#
+# Rule of thumb: everything `pnpm install --frozen-lockfile && pnpm build` needs stays;
+# everything else goes. Keeping the context small is not only about speed -- anything sent
+# here can end up in an image layer, and `.env`, `.qa-brain/` and `deploy/secrets/` must
+# never do that (docs/security-threat-model.md T6).
+
+# --- dependencies and build output (re-created inside the image) -------------------------
+node_modules
+**/node_modules
+dist
+**/dist
+**/*.tsbuildinfo
+.turbo
+**/.turbo
+
+# --- secrets and local runtime state -----------------------------------------------------
+.env
+.env.*
+!.env.example
+deploy/.env
+deploy/secrets
+.qa-brain
+**/.qa-brain
+
+# --- test output and caches --------------------------------------------------------------
+coverage
+**/coverage
+test-results
+**/test-results
+playwright-report
+**/playwright-report
+**/.vite
+**/.vite-temp
+**/.cache
+
+# --- VCS, CI and editor metadata ---------------------------------------------------------
+.git
+.gitignore
+.gitattributes
+.github
+.changeset
+.idea
+.vscode
+**/.DS_Store
+**/Thumbs.db
+
+# --- prose: never needed to compile ------------------------------------------------------
+docs
+research
+spikes
+*.md
+**/*.md
+# LICENSE has no extension so `*.md` does not catch it, but be explicit: the image carries
+# its Apache-2.0 licence (the `org.opencontainers.image.licenses` label points at it).
+!LICENSE
+
+# --- deployment artefacts: mounted at runtime, never baked in ----------------------------
+deploy
+
+# NOT ignored on purpose -- the build breaks without these:
+#   package.json, */*/package.json   workspace manifests read by pnpm
+#   pnpm-lock.yaml                   `--frozen-lockfile` refuses to run without it
+#   pnpm-workspace.yaml              defines packages/*, apps/*, examples/*
+#   .npmrc                           engine-strict, auto-install-peers (must match the lockfile)
+#   tsconfig.json, tsconfig.base.json, */*/tsconfig.json, */*/tsup.config.ts
+#   packages/, apps/                 sources, plus packages/store/migrations (shipped at runtime)
+#   docker/                          kept so the daemon can always read the Dockerfile path

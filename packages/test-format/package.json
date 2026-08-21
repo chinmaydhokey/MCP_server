@@ -1,0 +1,33 @@
+{
+  "name": "@qa-brain/test-format",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QA Brain intent-level test YAML (qabrain/test/v1): schema, canonicalisation, cache keys",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --clean --target node22",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "dependencies": {
+    "@qa-brain/core": "workspace:*",
+    "zod": "4.4.3",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {}
+}

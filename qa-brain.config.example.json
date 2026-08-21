@@ -1,0 +1,228 @@
+{
+  "//": [
+    "QA Brain -- LOCAL mode example configuration (stdio transport + SQLite + a Playwright MCP child).",
+    "",
+    "  cp qa-brain.config.example.json qa-brain.config.json",
+    "",
+    "The gateway looks for ./qa-brain.config.json or ./qa-brain.config.yaml, or whatever",
+    "$QA_BRAIN_CONFIG / --config points at. YAML is accepted with the same keys; the hosted",
+    "counterpart of this file is deploy/qa-brain.yaml.",
+    "",
+    "Every value below is also the built-in default, so a first run with NO config file behaves",
+    "exactly like this. The file exists to make the defaults visible and editable -- especially",
+    "the tool lists, which are the security boundary between an LLM and a browser.",
+    "",
+    "COMMENTS: JSON has none, so these '//' keys are used instead. The schema strips unknown",
+    "keys, so they are inert -- but keep them at the top of each object, and note that a '//'",
+    "key is NOT allowed directly inside 'mcpServers', whose keys must be lowercase kebab-case",
+    "upstream ids.",
+    "",
+    "Schema: packages/core/src/config-schema.ts (zod). Validate a file with `qa-brain doctor`.",
+    "String leaves support ${VAR} and ${VAR:-default}; every expanded value joins the redaction",
+    "set, so a secret pulled in from the environment can never be logged."
+  ],
+
+  "server": {
+    "//": [
+      "name           reported in MCP server info; Claude Code names tools mcp__<server>__<tool>",
+      "toolsListTtlMs ttlMs advertised on tools/list (2026-07-28 CacheableResult), 5 minutes",
+      "callTimeoutMs  per proxied tool call; a navigation-heavy step can legitimately take ~30 s",
+      "maxResultChars ~20k tokens, under Claude Code's 25k-token MCP result ceiling. Over-cap",
+      "               results are truncated with a `[truncated N chars]` marker, not dropped",
+      "exposeStubs    list the not-yet-implemented qa_* tools (qa_test_save, qa_heal_locator,",
+      "               qa_impact_select, ...). Leave false: a listed tool that answers 'not",
+      "               implemented' costs context on every turn and misleads the model"
+    ],
+    "name": "qa-brain",
+    "toolsListTtlMs": 300000,
+    "callTimeoutMs": 60000,
+    "maxResultChars": 80000,
+    "exposeStubs": false
+  },
+
+  "store": {
+    "//": [
+      "SQLite through @libsql/client (drizzle-orm/libsql). better-sqlite3 was rejected: no",
+      "prebuilt binary for Node 24 on Windows, which would force every contributor to install",
+      "Visual Studio build tools (ADR-0006).",
+      "Migrations run automatically on startup in stdio mode, so a first run against an empty",
+      "directory creates all 17 tables. `file::memory:` is valid too and is what the unit tests use."
+    ],
+    "driver": "sqlite",
+    "url": "file:${QA_BRAIN_HOME:-./.qa-brain}/qa-brain.db"
+  },
+
+  "artifacts": {
+    "//": [
+      "Screenshots, snapshots and traces on the local filesystem. QA_BRAIN_HOME defaults to",
+      "./.qa-brain, which is gitignored. Hosted mode swaps this for driver 's3' against a",
+      "private SeaweedFS bucket with presigned GETs (ADR-0008).",
+      "Note this is NOT the same directory as Playwright MCP's --output-dir, which the adapter",
+      "points at ${QA_BRAIN_HOME}/pw-out."
+    ],
+    "driver": "fs",
+    "dir": "${QA_BRAIN_HOME:-./.qa-brain}/artifacts"
+  },
+
+  "log": {
+    "//": [
+      "In stdio mode pino writes to STDERR only -- stdout is the JSON-RPC channel and the",
+      "transport forbids any other byte on it, so console.log is rebound to stderr as well.",
+      "",
+      "argsMode decides what action_log keeps for tool arguments:",
+      "  shape    keys and types only: {\"url\":\"string\"}",
+      "  redacted values after the redactor has run (local default -- useful for debugging",
+      "           your own runs, and the redactor masks tokens, keys and every ${VAR} literal)",
+      "  none     nothing",
+      "args_hash (sha256 of canonical JSON) is stored regardless, so the step cache and",
+      "duplicate detection work without persisting a single value. Log LINES always get the",
+      "shape, whatever this is set to. Result bodies are never stored."
+    ],
+    "level": "info",
+    "argsMode": "redacted"
+  },
+
+  "http": {
+    "//": [
+      "Only used by `qa-brain serve --transport http`. In stdio mode the process binds no port",
+      "at all: no /healthz, no /mcp, no listener.",
+      "",
+      "127.0.0.1 is deliberate. Combined with the empty allowedHosts/allowedOrigins lists it",
+      "keeps the SDK's localhostHostValidation() + localhostOriginValidation() active, which is",
+      "what makes DNS rebinding and hostile cross-origin requests fail with 403.",
+      "Fill allowedHosts/allowedOrigins only when you also change host, and then list exact",
+      "values -- they replace the localhost defaults rather than adding to them.",
+      "",
+      "allowUnauthenticated is honoured ONLY on a loopback bind; the CLI refuses it otherwise",
+      "and `qa-brain doctor` flags the combination. Set QA_BRAIN_TOKEN and leave this false."
+    ],
+    "host": "127.0.0.1",
+    "port": 8787,
+    "bearerTokenEnv": "QA_BRAIN_TOKEN",
+    "allowUnauthenticated": false,
+    "allowedHosts": [],
+    "allowedOrigins": []
+  },
+
+  "mcpServers": {
+    "playwright": {
+      "//": [
+        "command 'playwright' is an ALIAS, not a binary on PATH. The adapter resolves it with",
+        "require.resolve('playwright/package.json') and spawns:",
+        "",
+        "  node <playwright pkg dir>/cli.js mcp --headless --isolated --caps=testing",
+        "       --snapshot-mode=full --image-responses=omit --codegen none",
+        "       --output-dir <QA_BRAIN_HOME>/pw-out --timeout-action 10000 --timeout-navigation 30000",
+        "",
+        "Leaving 'args' empty gets exactly that list. Setting it replaces the whole list, so",
+        "copy the flags you want to keep. Two reasons for this shape: spawning `node` directly",
+        "sidesteps the Windows .cmd shim problem (Node >= 20 refuses to spawn .cmd without",
+        "shell: true), and pinning playwright@1.62.1 as a dependency guarantees the MCP server,",
+        "the browser revision and CI all share one version. Never npx (a registry fetch at spawn",
+        "time plus grandchildren that survive a plain kill) and never @playwright/mcp (0.0.79",
+        "depends on playwright 1.63.0-alpha, i.e. a second browser revision).",
+        "",
+        "Public names are prefix + upstreamName.replace(strip, ''): browser_click -> web_click.",
+        "A collision with a native qa_* name or another upstream is a startup error, never a",
+        "silent shadow."
+      ],
+      "command": "playwright",
+      "args": [],
+      "env": {},
+      "adapter": "playwright",
+      "prefix": "web_",
+      "strip": "browser_",
+      "longLived": true,
+
+      "tools": {
+        "//": [
+          "UPSTREAM names (browser_*), not public ones. Precedence: block beats allow beats",
+          "hidden, and qa_call_tool goes through the same lookup -- so a hidden tool is",
+          "reachable through it and a blocked tool is not reachable at all.",
+          "This is the single most security-relevant object in the file: the LLM's choices are",
+          "a function of page content, and page content is attacker-controlled."
+        ],
+
+        "allow": [
+          "browser_navigate",
+          "browser_snapshot",
+          "browser_find",
+          "browser_click",
+          "browser_type",
+          "browser_fill_form",
+          "browser_select_option",
+          "browser_press_key",
+          "browser_hover",
+          "browser_wait_for",
+          "browser_take_screenshot",
+          "browser_console_messages",
+          "browser_handle_dialog",
+          "browser_verify_text_visible",
+          "browser_verify_element_visible"
+        ],
+
+        "hidden": [
+          "browser_navigate_back",
+          "browser_tabs",
+          "browser_network_requests",
+          "browser_network_request",
+          "browser_generate_locator",
+          "browser_verify_value",
+          "browser_verify_list_visible",
+          "browser_drag",
+          "browser_drop",
+          "browser_file_upload",
+          "browser_resize",
+          "browser_close"
+        ],
+
+        "block": [
+          "browser_run_code_unsafe",
+          "browser_evaluate",
+          "browser_mouse_click_xy",
+          "browser_mouse_down",
+          "browser_mouse_drag_xy",
+          "browser_mouse_move_xy",
+          "browser_mouse_up",
+          "browser_mouse_wheel",
+          "browser_pdf_save",
+          "browser_start_tracing",
+          "browser_stop_tracing",
+          "browser_start_video",
+          "browser_stop_video",
+          "browser_route",
+          "browser_unroute",
+          "browser_route_list",
+          "browser_network_state_set",
+          "browser_storage_state",
+          "browser_set_storage_state",
+          "browser_get_config"
+        ]
+      },
+
+      "health": {
+        "//": [
+          "server/discover (modern era) or ping (legacy) every 60 s, 5 s timeout, three",
+          "consecutive strikes before a restart. A degraded upstream KEEPS its names in",
+          "tools/list and answers isError with a recovery hint: a name that disappears keeps",
+          "being called from conversation history anyway."
+        ],
+        "intervalMs": 60000,
+        "timeoutMs": 5000,
+        "unhealthyThreshold": 3
+      },
+
+      "restart": {
+        "//": [
+          "Exponential backoff 1 s -> 30 s, five attempts. Shutdown of the child follows the",
+          "stdio transport's sequence: close stdin, 2 s, SIGTERM, 3 s, SIGKILL -- and on",
+          "Windows `taskkill /PID <pid> /T /F`, because Windows has neither SIGTERM nor process",
+          "groups and the node -> chromium tree would otherwise outlive the gateway."
+        ],
+        "maxAttempts": 5,
+        "baseMs": 1000,
+        "maxMs": 30000
+      }
+    }
+  }
+}

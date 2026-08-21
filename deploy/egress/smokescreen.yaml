@@ -1,0 +1,92 @@
+---
+# QA Brain -- Smokescreen server configuration.
+#
+# Mounted read-only at /etc/smokescreen/smokescreen.yaml. The ACL (which domains are
+# allowed) is a separate file, deploy/egress/acl.yaml.
+#
+# WHY THIS FILE EXISTS AT ALL: `allow_missing_role` has no command-line flag in Smokescreen
+# v0.0.4 -- it is settable only through a config file. Without it every request from the
+# browser sidecar is rejected before the ACL is even consulted, because Smokescreen cannot
+# derive a role from a client that presents no TLS certificate. Everything else here could
+# have been a flag; it is kept together so the proxy's behaviour is readable in one place.
+# Command-line options override values in this file (that is Smokescreen's documented
+# precedence), which is why deploy/docker-compose.yml still passes --listen-port and
+# --egress-acl-file explicitly.
+#
+# M0 STATUS: design artefact -- the egress proxy carries traffic from milestone M5.
+
+# Listen on all interfaces INSIDE the container. The client is the playwright-mcp container
+# on the `browsers` network, not localhost, and that network is `internal: true`.
+ip: 0.0.0.0
+port: 4750
+
+acl_file: /etc/smokescreen/acl.yaml
+
+# THE CENTRAL SETTING. Requests arrive over plain HTTP with no client certificate, so
+# Smokescreen cannot identify a role; without this it fails them all with a missing-role
+# error and the ACL never runs. With it, role is empty and every request is decided by the
+# `default:` rule in acl.yaml -- which is `action: enforce`, i.e. still default-deny.
+#
+# Set this to false and introduce mTLS (tls.client_ca_files below) the moment more than one
+# tenant shares this proxy: then each sidecar gets a certificate whose CN selects its own
+# per-project allow-list.
+allow_missing_role: true
+
+# Explicit rather than implicit. Smokescreen already denies private ranges by default; the
+# only thing that turns that off is this key being true, so writing it out means a future
+# edit to enable it is visible in a diff rather than achieved by deleting a line.
+# Turning this on would expose the whole VM -- every loopback service, the Docker bridge,
+# and 169.254.169.254 -- to a browser that a page can steer (threat model T2).
+unsafe_allow_private_ranges: false
+
+# Denied in addition to the built-in private ranges. Repeated as --deny-range flags in the
+# compose command; three independent statements of the same rule is deliberate.
+deny_ranges:
+  # Link-local, which contains the cloud metadata endpoint.
+  - 169.254.0.0/16
+  # Loopback: the browser must not be able to reach anything the proxy itself can see on
+  # 127.0.0.1.
+  - 127.0.0.0/8
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+  # IPv6 loopback, unique-local and link-local.
+  - ::1/128
+  - fc00::/7
+  - fe80::/10
+
+# Empty on purpose. An allow_range entry punches a hole straight through the denials above.
+allow_ranges: []
+
+# Connect timeout to the destination. Shorter than the gateway's callTimeoutMs (60 s) so a
+# dead origin surfaces as a proxy error the run can classify, rather than as a tool-call
+# timeout that looks like a test failure.
+connect_timeout: 10s
+
+# How long an idle tunnel is held open. A browser keeps connections alive between steps;
+# 60 s covers the gap between two tool calls without leaking sockets on an abandoned run.
+idle_timeout: 60s
+
+# Denied requests get this appended to the HTTP error body. The point is that whoever reads
+# a red test knows immediately that the network policy refused, not that the app is broken.
+deny_message_extra: >-
+  Blocked by the QA Brain egress proxy. Add the domain to `default.allowed_domains` in
+  deploy/egress/acl.yaml if the application under test genuinely needs it. Private, loopback
+  and link-local addresses (including 169.254.169.254) are denied unconditionally.
+
+# Smokescreen ships with a statsd default of 127.0.0.1:8200. Nothing listens there in this
+# stack; UDP to a closed port is silently dropped, so it costs nothing, but it is stated
+# here so the next reader does not go hunting for a metrics sink that does not exist.
+statsd_address: 127.0.0.1:8200
+
+# mTLS, unset today. When multiple projects share one proxy, give each browser sidecar a
+# client certificate whose CN matches a `services[].name` entry in acl.yaml, set
+# allow_missing_role to false, and the per-project allow-lists become enforceable:
+#
+# tls:
+#   cert_file: /run/secrets/smokescreen_server.pem
+#   key_file: /run/secrets/smokescreen_server_key.pem
+#   client_ca_files:
+#     - /run/secrets/smokescreen_client_ca.pem
+#   crl_files:
+#     - /run/secrets/smokescreen_crl.pem

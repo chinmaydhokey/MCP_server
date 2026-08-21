@@ -1,0 +1,129 @@
+name: Bug report
+description: Something in the QA Brain gateway, CLI, store or an adapter does not behave as documented.
+title: "bug: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Run `qa-brain doctor` and `qa-brain tools list --json` first; their output answers most of the questions below.
+        Security problems (allowlist bypass, secret leakage, SSRF via navigation) must go through a private advisory, not this form — see SECURITY.md.
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client / host
+      description: Which client was attached to QA Brain when the bug occurred?
+      options:
+        - Claude Code
+        - Codex CLI
+        - Cursor
+        - Claude Desktop
+        - QA Brain runner (apps/runner, headless)
+        - Zero-code CI profile (claude -p --bare --mcp-config)
+        - Custom client on @modelcontextprotocol/client
+        - No client (CLI command only)
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - stdio (qa-brain serve --transport stdio)
+        - http (qa-brain serve --transport http)
+        - In-memory (unit test)
+    validations:
+      required: true
+  - type: dropdown
+    id: era
+    attributes:
+      label: Negotiated protocol era (from qa_health or the log)
+      options:
+        - modern (2026-07-28)
+        - legacy (2025-11-25)
+        - Unknown
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "Windows 11 Pro 10.0.26200 / Ubuntu 24.04 / macOS 15.6"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node.js version
+      description: Output of `node --version`. QA Brain requires >=22.12.
+      placeholder: "v24.6.0"
+    validations:
+      required: true
+  - type: input
+    id: qa-brain-version
+    attributes:
+      label: QA Brain version
+      description: Output of `qa-brain --version`, or the git SHA if running from source.
+      placeholder: "0.1.0 / 1a2b3c4"
+    validations:
+      required: true
+  - type: input
+    id: upstream-version
+    attributes:
+      label: Upstream automation server and version
+      description: Playwright (`pnpm exec playwright --version`) or appium-mcp (`appium-mcp --version`). Mention the browser if not Chromium.
+      placeholder: "playwright 1.62.1 (bundled mcp), Chromium from ms-playwright cache"
+    validations:
+      required: true
+  - type: input
+    id: store
+    attributes:
+      label: Store driver
+      placeholder: "sqlite (@libsql/client, file:./.qa-brain/qa-brain.db) or pg (Postgres 18)"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands and tool calls, including the config file with secrets replaced by `${VAR}` references.
+      placeholder: |
+        1. `qa-brain serve --transport stdio --config qa-brain.config.json`
+        2. From Claude Code: call `web_navigate` with `{ "url": "http://127.0.0.1:4173/form.html" }`
+        3. Call `web_click` with the ref returned by `web_snapshot`
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the `isError` text returned to the model verbatim if there was one.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (stderr) and action_log excerpt
+      description: |
+        Paste the gateway's stderr at `--log-level debug` and the relevant `action_log` rows
+        (`sqlite3 .qa-brain/qa-brain.db "select ts_start, tool, upstream_tool, duration_ms, is_error, error_code, error_message, args_shape from action_log order by ts_start desc limit 20"`).
+        Logs are redacted by the gateway, but check for secrets before posting.
+      render: text
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `qa-brain doctor`
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and discussions.
+          required: true
+        - label: I removed secrets, tokens and private URLs from the logs and config above.
+          required: true
+        - label: This is not a security vulnerability (those go through a private advisory).
+          required: true

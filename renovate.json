@@ -1,0 +1,35 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":pinAllExceptPeerDependencies",
+    "docker:pinDigests",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "timezone": "Asia/Kolkata",
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "description": "The MCP SDK moves fast and its wire behaviour is load-bearing; review these together.",
+      "matchPackageNames": ["@modelcontextprotocol/**"],
+      "groupName": "mcp sdk",
+      "rangeStrategy": "pin"
+    },
+    {
+      "description": "A Playwright bump changes the MCP tool schemas and the browser revision; re-verify the tool table.",
+      "matchPackageNames": ["playwright", "@playwright/mcp", "mcr.microsoft.com/playwright"],
+      "groupName": "playwright",
+      "rangeStrategy": "pin",
+      "schedule": ["before 5am on the first day of the month"],
+      "labels": ["dependencies", "needs-tool-schema-check"]
+    },
+    {
+      "description": "Mobile upstream, arriving in milestone M6.",
+      "matchPackageNames": ["appium-mcp", "@mobilenext/mobile-mcp"],
+      "groupName": "appium",
+      "rangeStrategy": "pin"
+    }
+  ],
+  "lockFileMaintenance": { "enabled": true, "schedule": ["before 5am on monday"] },
+  "vulnerabilityAlerts": { "labels": ["security"] }
+}
