@@ -1,0 +1,534 @@
+# QA Brain -- hosted mode, base stack.
+#
+# ============================ M0 STATUS: DESIGN ARTEFACT ================================
+# Nothing in this file is wired to code yet. The M0 scaffold implements local stdio mode
+# plus an HTTP handler that is unit-tested in-process. The `worker` command, `qa-brain db
+# migrate`, Postgres/pg-boss, SeaweedFS artefacts, hashed API keys and the hosted HTTP
+# server all arrive in milestone M5 (Feb 2027) -- see docs/roadmap.md. This file is
+# committed now so the topology, the trust boundaries and the hardening baseline are
+# reviewable, versioned and syntactically valid before any of it is load-bearing.
+# =======================================================================================
+#
+# Usage (from this directory):
+#   dev:   docker compose -f docker-compose.yml -f docker-compose.dev.yml  up -d
+#   prod:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Relative paths below resolve against the project directory, which Compose sets to the
+# directory of the FIRST -f file -- i.e. always `deploy/`, whether you invoke it from here
+# or as `-f deploy/docker-compose.yml` from the repository root.
+#
+# Every service here is justified by docs/deployment.md section 3.1. Caddy lives in the prod
+# overlay, Jaeger in the dev overlay, Tempo/Grafana in the prod overlay behind a profile.
+
+name: qa-brain
+
+# ---------------------------------------------------------------------------------------
+# Shared fragments
+# ---------------------------------------------------------------------------------------
+
+# 30 MB of logs per service, then the oldest rotation is dropped. Without this a chatty
+# container fills the VM's disk and takes Postgres down with it; it is the minimum the
+# 2026 Compose-in-production consensus lists alongside pinning and healthchecks.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# The hardening baseline from docs/deployment.md section 5. Services override individual
+# keys below (explicit keys always win over a YAML merge).
+#
+#   init            real PID 1 inside the container so Chromium/Node grandchildren are
+#                   reaped instead of accumulating as zombies (Playwright Docker docs)
+#   read_only       root filesystem is immutable; writable paths are explicit tmpfs/volumes
+#   tmpfs /tmp      because read_only would otherwise break every temp-file write
+#   cap_drop ALL    nothing here needs a Linux capability; Caddy re-adds exactly one
+#   no-new-privs    a setuid binary inside the image cannot escalate after exec
+#   restart         `unless-stopped`, not `always`, so an operator's explicit
+#                   `docker compose stop` survives a host reboot
+x-hardened: &hardened
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  restart: unless-stopped
+  logging: *logging
+
+# Environment shared by every process that runs the qa-brain image (gateway, worker,
+# migrator). Secrets are NOT here: they arrive as files under /run/secrets.
+x-qa-brain-env: &qa-brain-env
+  QA_BRAIN_HOME: /data
+  QA_BRAIN_CONFIG: /config/qa-brain.yaml
+  QA_BRAIN_LOG_LEVEL: ${QA_BRAIN_LOG_LEVEL:-info}
+  QA_BRAIN_LOG_ARGS_MODE: ${QA_BRAIN_LOG_ARGS_MODE:-shape}
+  QA_BRAIN_PUBLIC_URL: ${QA_BRAIN_PUBLIC_URL:-https://qa.example.com}
+  QA_BRAIN_DATABASE_URL: ${QA_BRAIN_DATABASE_URL:-postgres://qa_brain@postgres:5432/qa_brain}
+  QA_BRAIN_DATABASE_PASSWORD_FILE: /run/secrets/pg_password
+  QA_BRAIN_S3_ENDPOINT: ${QA_BRAIN_S3_ENDPOINT:-http://seaweedfs:8333}
+  QA_BRAIN_S3_BUCKET: ${QA_BRAIN_S3_BUCKET:-qa-brain-artifacts}
+  QA_BRAIN_S3_REGION: ${QA_BRAIN_S3_REGION:-us-east-1}
+  QA_BRAIN_S3_PREFIX: ${QA_BRAIN_S3_PREFIX:-}
+  # AWS SDK v3 reads this INI file itself, so the S3 keys never enter a process environment
+  # and never show up in `docker inspect` (threat model T6).
+  AWS_SHARED_CREDENTIALS_FILE: /run/secrets/s3_credentials
+  AWS_PROFILE: ${QA_BRAIN_S3_PROFILE:-qa-brain}
+  QA_BRAIN_PLAYWRIGHT_URL: ${QA_BRAIN_PLAYWRIGHT_URL:-http://playwright-mcp:8931/mcp}
+  QA_BRAIN_CALL_TIMEOUT_MS: ${QA_BRAIN_CALL_TIMEOUT_MS:-60000}
+  QA_BRAIN_MAX_RESULT_CHARS: ${QA_BRAIN_MAX_RESULT_CHARS:-80000}
+  QA_BRAIN_TOOLS_LIST_TTL_MS: ${QA_BRAIN_TOOLS_LIST_TTL_MS:-300000}
+  QA_BRAIN_EXPOSE_STUBS: ${QA_BRAIN_EXPOSE_STUBS:-false}
+  QA_BRAIN_OTEL_EXPORTER: ${QA_BRAIN_OTEL_EXPORTER:-otlp}
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}
+  OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+  OTEL_TRACES_SAMPLER: ${OTEL_TRACES_SAMPLER:-parentbased_always_on}
+  OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment=hosted}
+  # Unset by default: `1` attaches REDACTED gen_ai.tool.call.arguments to spans, and the
+  # collector must be told separately to keep them (deploy/otel/collector.yaml).
+  QA_BRAIN_TRACE_ARGS: ${QA_BRAIN_TRACE_ARGS:-}
+
+services:
+
+  # -------------------------------------------------------------------------------------
+  # migrate -- one-shot, runs to completion before anything serves a request.
+  #
+  # Schema changes never run implicitly in hosted mode (docs/deployment.md section 7):
+  # this applies the Drizzle migrations from packages/store/migrations/pg, runs pg-boss's
+  # own schema migration (pg-boss 12 does not auto-migrate across majors) and creates the
+  # artefacts bucket with its 30-day lifecycle rule, then exits. `qa-brain` and `worker`
+  # gate on `service_completed_successfully`, so a failed migration stops the whole stack
+  # before a single request is served instead of half-migrating under load.
+  # -------------------------------------------------------------------------------------
+  migrate:
+    <<: *hardened
+    image: ${QA_BRAIN_IMAGE:-ghcr.io/chinmaydhokey/qa-brain}:${QA_BRAIN_VERSION:-0.1.0}
+    command: ["db", "migrate", "--config", "/config/qa-brain.yaml"]
+    restart: "no"
+    environment: *qa-brain-env
+    volumes:
+      - ./qa-brain.yaml:/config/qa-brain.yaml:ro
+    tmpfs:
+      - /tmp
+      - /data:size=32m
+    secrets:
+      - pg_password
+      - s3_credentials
+      - admin_bootstrap_key
+    networks:
+      - data
+    # The image's HEALTHCHECK probes :8080/healthz, which a one-shot migrator never serves.
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_healthy
+    mem_limit: 512m
+    cpus: 1
+
+  # -------------------------------------------------------------------------------------
+  # qa-brain -- the gateway. Streamable HTTP at POST /mcp, plus /healthz and /readyz.
+  # -------------------------------------------------------------------------------------
+  qa-brain:
+    <<: *hardened
+    image: ${QA_BRAIN_IMAGE:-ghcr.io/chinmaydhokey/qa-brain}:${QA_BRAIN_VERSION:-0.1.0}
+    # Same as the image CMD; repeated so the serving shape is visible without docker inspect.
+    command:
+      - serve
+      - --transport
+      - http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --config
+      - /config/qa-brain.yaml
+    environment: *qa-brain-env
+    volumes:
+      - ./qa-brain.yaml:/config/qa-brain.yaml:ro
+    # /data holds only era-cache.json in hosted mode (store is Postgres, artefacts are S3),
+    # and that file is a cache keyed by a hash of the upstream launch -- losing it on
+    # restart costs one protocol re-negotiation, so tmpfs beats a volume.
+    tmpfs:
+      - /tmp
+      - /data:size=32m
+    secrets:
+      - pg_password
+      - s3_credentials
+    # No ports published in prod: Caddy is the only thing that talks to :8080, over the
+    # `edge` network. The dev overlay publishes 127.0.0.1:8080 for local clients.
+    networks:
+      - edge
+      - data
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      otel-collector:
+        # No healthcheck on the collector (distroless image, see below), and tracing is
+        # best-effort anyway: a missing collector must never keep the gateway down.
+        condition: service_started
+    # healthcheck inherited from the image: node fetch http://127.0.0.1:8080/healthz,
+    # 30s/5s/3 retries/20s start period (docs/deployment.md section 5).
+    mem_limit: 1g
+    cpus: 1
+    pids_limit: 256
+
+  # -------------------------------------------------------------------------------------
+  # worker -- pg-boss consumer. Runs the actual browser sessions.
+  #
+  # This is the only service on the `browsers` network besides the sidecar and the proxy,
+  # which is what makes the browser blast radius small: a prompt-injected page can steer
+  # the browser, and the browser can reach nothing but the worker and Smokescreen.
+  # -------------------------------------------------------------------------------------
+  worker:
+    <<: *hardened
+    image: ${QA_BRAIN_IMAGE:-ghcr.io/chinmaydhokey/qa-brain}:${QA_BRAIN_VERSION:-0.1.0}
+    command: ["worker", "--config", "/config/qa-brain.yaml"]
+    environment:
+      <<: *qa-brain-env
+      OTEL_SERVICE_NAME: qa-brain-worker
+      # M6: appium-mcp is spawned as a stdio child only when a mobile job arrives, never as
+      # a service. `skip` because the default `delete_all` tears down every device session
+      # when the last MCP client disconnects -- which a supervisor restart would trigger.
+      APPIUM_MCP_ON_CLIENT_DISCONNECT: skip
+    volumes:
+      - ./qa-brain.yaml:/config/qa-brain.yaml:ro
+    tmpfs:
+      - /tmp
+      - /data:size=64m
+    secrets:
+      - pg_password
+      - s3_credentials
+      - github_app_key
+    networks:
+      - data
+      - browsers
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      playwright-mcp:
+        condition: service_healthy
+      egress:
+        condition: service_healthy
+    # Must override the image healthcheck: the worker serves no HTTP port, so the inherited
+    # /healthz probe would mark it unhealthy forever.
+    healthcheck:
+      test: ["CMD", "qa-brain", "worker", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    mem_limit: 1g
+    cpus: 1
+    pids_limit: 512
+    # Scale with `docker compose up -d --scale worker=N`; pg-boss hands each replica
+    # distinct jobs, so N workers need N browser contexts (raise playwright-mcp cpus too).
+
+  # -------------------------------------------------------------------------------------
+  # playwright-mcp -- the browser sidecar (docs/deployment.md section 4).
+  # -------------------------------------------------------------------------------------
+  playwright-mcp:
+    <<: *hardened
+    image: ${QA_BRAIN_BROWSER_IMAGE:-ghcr.io/chinmaydhokey/qa-brain-browser}:${QA_BRAIN_BROWSER_VERSION:-1.62.1}
+    user: pwuser
+    # Playwright's documented default for containers: Chromium uses shared memory heavily
+    # and the 64 MB default /dev/shm makes tabs crash under load. Swap this for
+    # `shm_size: 2g` the moment more than one tenant shares the VM -- `ipc: host` removes
+    # the IPC namespace boundary between this container and the host.
+    ipc: host
+    # The image CMD carries the same flags minus the two that depend on Compose secrets;
+    # they are spelled out here because this is the command line docs/deployment.md
+    # section 4 fixes, and a reviewer should not have to `docker inspect` to check it.
+    command:
+      - --headless
+      - --browser
+      - chromium
+      - --isolated
+      - --port
+      - "8931"
+      - --host
+      - 0.0.0.0
+      # DNS-rebinding guard: only the Compose service name is accepted in the Host header.
+      - --allowed-hosts
+      - playwright-mcp
+      - --caps=testing
+      - --snapshot-mode=full
+      - --image-responses=omit
+      - --codegen
+      - none
+      - --output-dir
+      - /artifacts
+      # 500 MiB: Playwright evicts its own old output before the volume fills.
+      - --output-max-size
+      - "524288000"
+      - --save-session
+      # Application logins as a dotenv file, resolved inside Playwright and redacted from
+      # tool output -- never in argv, which `ps` shows to every user in the container.
+      - --secrets
+      - /run/secrets/aut_secrets
+      # Every byte the browser sends leaves through Smokescreen's ACL.
+      - --proxy-server
+      - http://egress:4750
+      - --timeout-action
+      - "5000"
+      - --timeout-navigation
+      - "30000"
+      - --timeout-settle
+      - "500"
+    environment:
+      # The default 5 s heartbeat closes sessions mid-call once a navigation goes through
+      # the proxy; 60 s matches server.callTimeoutMs (microsoft/playwright#41391).
+      PLAYWRIGHT_MCP_PING_TIMEOUT_MS: "60000"
+    volumes:
+      - artifacts:/artifacts
+    tmpfs:
+      - /tmp:size=1g
+      - /home/pwuser/.cache
+    secrets:
+      - aut_secrets
+    # Docker's default profile plus the user-namespace clone permissions Chromium's sandbox
+    # needs. Without it the only way to start Chromium in a hardened container is
+    # --no-sandbox, which turns the renderer -- the process that parses untrusted pages --
+    # into an unsandboxed process. See the header of docker/seccomp_profile.json.
+    security_opt:
+      - seccomp=${QA_BRAIN_SECCOMP_PROFILE:-../docker/seccomp_profile.json}
+      - no-new-privileges:true
+    networks:
+      - browsers
+    # healthcheck inherited from the image (any HTTP answer on :8931 means it is listening).
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 1024
+
+  # -------------------------------------------------------------------------------------
+  # egress -- Smokescreen. The `browsers` network is internal: true, so this is the ONLY
+  # route from a browser to the internet, and it is an allow-list.
+  # -------------------------------------------------------------------------------------
+  egress:
+    <<: *hardened
+    build:
+      context: ../docker/egress
+      dockerfile: Dockerfile
+    image: ${QA_BRAIN_EGRESS_IMAGE:-qa-brain-egress}:${QA_BRAIN_EGRESS_VERSION:-v0.0.4}
+    user: "65532:65532"
+    command:
+      - --config-file
+      - /etc/smokescreen/smokescreen.yaml
+      - --listen-ip
+      - 0.0.0.0
+      - --listen-port
+      - "4750"
+      - --egress-acl-file
+      - /etc/smokescreen/acl.yaml
+      # Belt and braces on top of Smokescreen's built-in private-range denial: these are the
+      # ranges the URL guard rejects too (threat model section 4), stated twice on purpose
+      # because a single `unsafe_allow_private_ranges: true` in a config file would
+      # otherwise silently open all of them.
+      - --deny-range
+      - 169.254.0.0/16
+      - --deny-range
+      - 127.0.0.0/8
+      - --deny-range
+      - 10.0.0.0/8
+      - --deny-range
+      - 172.16.0.0/12
+      - --deny-range
+      - 192.168.0.0/16
+      - --deny-address
+      - 169.254.169.254
+    volumes:
+      - ./egress/acl.yaml:/etc/smokescreen/acl.yaml:ro
+      - ./egress/smokescreen.yaml:/etc/smokescreen/smokescreen.yaml:ro
+    # `browsers` for the sidecar, `edge` for the internet. Smokescreen is deliberately NOT
+    # on `data`: a proxy that can reach Postgres is a proxy that can be told to reach it.
+    networks:
+      - browsers
+      - edge
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "4750"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 128
+
+  # -------------------------------------------------------------------------------------
+  # postgres -- store + pg-boss queue. One database, no Redis anywhere (ADR-0007).
+  # -------------------------------------------------------------------------------------
+  postgres:
+    <<: *hardened
+    image: postgres:18
+    # read_only cannot apply: Postgres writes its data directory, WAL and sockets.
+    read_only: false
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-256MB}
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-qa_brain}
+      POSTGRES_DB: ${POSTGRES_DB:-qa_brain}
+      # _FILE variant: the password is read from the mounted secret, so it is not in the
+      # container environment and not in `docker inspect` output.
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_password
+      POSTGRES_INITDB_ARGS: --data-checksums
+    secrets:
+      - pg_password
+    volumes:
+      # postgres:18 moved the declared volume to /var/lib/postgresql (PGDATA now lives at
+      # /var/lib/postgresql/18/docker). Mounting the parent works for both layouts.
+      - pgdata:/var/lib/postgresql
+    tmpfs:
+      - /tmp
+      - /run/postgresql
+    # Postgres puts its buffers in shared memory; the 64 MB default is not enough once
+    # parallel workers start.
+    shm_size: 256m
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qa_brain} -d ${POSTGRES_DB:-qa_brain}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    mem_limit: 1g
+    cpus: 2
+
+  # -------------------------------------------------------------------------------------
+  # seaweedfs -- S3-compatible artefact storage (ADR-0008). MinIO CE is no longer
+  # published, so this is the replacement, not a preference.
+  # -------------------------------------------------------------------------------------
+  seaweedfs:
+    <<: *hardened
+    image: chrislusf/seaweedfs:4.43
+    # read_only cannot apply: master, volume and filer all write under -dir.
+    read_only: false
+    # The image entrypoint is the `weed` dispatcher, so the command starts at `server`.
+    command:
+      - server
+      - -s3
+      - -s3.port=8333
+      # Identities and keys live in a Compose secret, never in a file committed to git.
+      - -s3.config=/run/secrets/seaweed_s3_config
+      - -dir=/data
+      - -master.volumeSizeLimitMB=1024
+    secrets:
+      - seaweed_s3_config
+    volumes:
+      - seaweed:/data
+    networks:
+      - data
+    healthcheck:
+      # The image is Alpine-based, so busybox wget is available. 9333 is the master port.
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:9333/cluster/status"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 1g
+    cpus: 1
+
+  # -------------------------------------------------------------------------------------
+  # otel-collector -- traces and metrics pipeline (docs/observability.md section 8).
+  # -------------------------------------------------------------------------------------
+  otel-collector:
+    <<: *hardened
+    image: otel/opentelemetry-collector-contrib:0.159.0
+    command: ["--config", "/etc/otelcol/collector.yaml"]
+    environment:
+      # Which backend the traces pipeline exports to. dev overlay -> jaeger, prod -> tempo.
+      QA_BRAIN_OTEL_TRACES_ENDPOINT: ${QA_BRAIN_OTEL_TRACES_ENDPOINT:-jaeger:4317}
+      QA_BRAIN_OTEL_MEMORY_LIMIT_MIB: ${QA_BRAIN_OTEL_MEMORY_LIMIT_MIB:-384}
+    volumes:
+      - ./otel/collector.yaml:/etc/otelcol/collector.yaml:ro
+    networks:
+      - data
+    # No healthcheck: the collector-contrib image is distroless -- no shell, no wget, no
+    # curl -- and a Docker healthcheck necessarily runs a binary from inside the image. The
+    # health_check extension still listens on :13133 for an external uptime probe, and
+    # dependants use `condition: service_started` because traces are best-effort.
+    healthcheck:
+      disable: true
+    mem_limit: 512m
+    cpus: 1
+
+# ---------------------------------------------------------------------------------------
+# Networks -- three trust zones (docs/deployment.md section 3).
+# ---------------------------------------------------------------------------------------
+networks:
+  # Internet-facing: Caddy, the gateway, and the egress proxy's uplink.
+  edge:
+    driver: bridge
+  # internal: true removes the default gateway, so nothing here can reach the internet and
+  # nothing on the internet can be reached from here -- including by a compromised browser.
+  data:
+    driver: bridge
+    internal: true
+  # Contains exactly three participants: worker, playwright-mcp, egress. A browser that is
+  # prompt-injected into visiting an attacker URL cannot see Postgres or the object store at
+  # all, and reaches the internet only through Smokescreen's ACL.
+  browsers:
+    driver: bridge
+    internal: true
+
+volumes:
+  pgdata:
+  seaweed:
+  # Playwright MCP --output-dir. The worker uploads what it needs to S3; this is scratch.
+  artifacts:
+
+# ---------------------------------------------------------------------------------------
+# Secrets -- files, not environment variables (docs/deployment.md section 6).
+#
+# Compose mounts each of these read-only under /run/secrets/<name>. Create them before the
+# first `up`; QA_BRAIN_SECRETS_DIR lets you keep them off the repository filesystem
+# entirely (recommended: /etc/qa-brain/secrets, mode 0700, files 0600).
+#
+#   mkdir -p secrets && chmod 700 secrets
+#   openssl rand -base64 32 | tr -d '\n' > secrets/pg_password
+#   openssl rand -base64 32 | tr -d '\n' > secrets/admin_bootstrap_key
+#
+# NOTE for whoever wires M5: `deploy/secrets/` is NOT covered by the repository .gitignore
+# today (it ignores `.env`, `.env.*` and keeps `deploy/.env.example`). Either add
+# `deploy/secrets/` to .gitignore or point QA_BRAIN_SECRETS_DIR outside the working tree
+# before putting real values in these files.
+# ---------------------------------------------------------------------------------------
+secrets:
+  # Postgres superuser password. Consumed by postgres via POSTGRES_PASSWORD_FILE and by the
+  # app services (M5) via QA_BRAIN_DATABASE_PASSWORD_FILE.
+  pg_password:
+    file: ${QA_BRAIN_SECRETS_DIR:-./secrets}/pg_password
+  # First API key, minted by `qa-brain db migrate` into the api_key table as an argon2id
+  # hash (ADR-0012). Printed once, never stored in cleartext.
+  admin_bootstrap_key:
+    file: ${QA_BRAIN_SECRETS_DIR:-./secrets}/admin_bootstrap_key
+  # AWS-style INI credentials file read directly by the AWS SDK (AWS_SHARED_CREDENTIALS_FILE):
+  #   [qa-brain]
+  #   aws_access_key_id = ...
+  #   aws_secret_access_key = ...
+  s3_credentials:
+    file: ${QA_BRAIN_SECRETS_DIR:-./secrets}/s3_credentials
+  # SeaweedFS server-side identity config (-s3.config). Different format from the client
+  # credentials above -- SeaweedFS wants JSON identities with actions, the SDK wants INI --
+  # so they are two files rather than one shared one.
+  seaweed_s3_config:
+    file: ${QA_BRAIN_SECRETS_DIR:-./secrets}/seaweed_s3_config.json
+  # dotenv consumed by Playwright's --secrets: application-under-test logins referenced from
+  # tests as ${secret:X}. Resolved inside Playwright, redacted from tool output, never in
+  # the LLM context.
+  aut_secrets:
+    file: ${QA_BRAIN_SECRETS_DIR:-./secrets}/aut_secrets.env
+  # GitHub App private key (M4). Read from a file so it can never reach a child process's
+  # environment (threat model section 9).
+  github_app_key:
+    file: ${QA_BRAIN_SECRETS_DIR:-./secrets}/github_app_key.pem
