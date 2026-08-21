@@ -1,0 +1,22 @@
+name: dependency-review
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          # QA Brain is Apache-2.0 and wraps third-party automation servers; a transitive AGPL dependency
+          # would change the project's licensing posture without anyone noticing.
+          deny-licenses: AGPL-3.0
+          comment-summary-in-pr: always

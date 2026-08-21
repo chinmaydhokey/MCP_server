@@ -32,7 +32,7 @@
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/core": "2.0.0",
     "@modelcontextprotocol/node": "2.0.0",
-    "hono": "4.11.4",
+    "hono": "4.13.3",
     "zod": "4.4.3",
     "pino": "10.3.1",
     "yaml": "2.9.0",

@@ -85,7 +85,7 @@ importers:
         version: 2.0.0
       '@modelcontextprotocol/node':
         specifier: 2.0.0
-        version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.11.4)
+        version: 2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.13.3)
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
@@ -99,8 +99,8 @@ importers:
         specifier: workspace:*
         version: link:../store
       hono:
-        specifier: 4.11.4
-        version: 4.11.4
+        specifier: 4.13.3
+        version: 4.13.3
       pino:
         specifier: 10.3.1
         version: 10.3.1
@@ -1561,8 +1561,8 @@ packages:
   get-tsconfig@4.14.3:
     resolution: {integrity: sha512-++QEw4DIY7WGoukz+/+A/8dGYPT9l9yIadnmSgZ8Rjr3YVSVDipQSO9CdnJo9ePqFqUUqh+wk9uIaoiAwsiPkA==}
 
-  hono@4.11.4:
-    resolution: {integrity: sha512-U7tt8JsyrxSRKspfhtLET79pU8K+tInj5QZXs1jSugO1Vq5dFj3kmZsRldo29mTBfcjDRVRXrEZ6LS63Cog9ZA==}
+  hono@4.13.3:
+    resolution: {integrity: sha512-r8AO2mYHoLxSHkgafNeC/BXyb2vWRxD3jem4Ts+ptav8oTG5FIRifAjuJEmZI4bSvvc2ns0GxmIYiZnHqN3mMw==}
     engines: {node: '>=16.9.0'}
 
   human-id@4.2.1:
@@ -2588,9 +2588,9 @@ snapshots:
   '@esbuild/win32-x64@0.28.2':
     optional: true
 
-  '@hono/node-server@1.19.17(hono@4.11.4)':
+  '@hono/node-server@1.19.17(hono@4.13.3)':
     dependencies:
-      hono: 4.11.4
+      hono: 4.13.3
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:
@@ -2693,12 +2693,12 @@ snapshots:
     dependencies:
       zod: 4.4.3
 
-  '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.11.4)':
+  '@modelcontextprotocol/node@2.0.0(@modelcontextprotocol/server@2.0.0)(hono@4.13.3)':
     dependencies:
-      '@hono/node-server': 1.19.17(hono@4.11.4)
+      '@hono/node-server': 1.19.17(hono@4.13.3)
       '@modelcontextprotocol/server': 2.0.0
     optionalDependencies:
-      hono: 4.11.4
+      hono: 4.13.3
 
   '@modelcontextprotocol/server@2.0.0':
     dependencies:
@@ -3122,7 +3122,7 @@ snapshots:
     dependencies:
       resolve-pkg-maps: 1.0.0
 
-  hono@4.11.4: {}
+  hono@4.13.3: {}
 
   human-id@4.2.1: {}
 

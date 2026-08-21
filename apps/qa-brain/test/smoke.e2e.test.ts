@@ -1,5 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
@@ -19,6 +18,16 @@ import { startStaticSite } from '../../../examples/static-site/serve.js';
  */
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+
+/**
+ * Scratch directories live under the repo's gitignored `.qa-brain/` rather than the OS temp dir, so a failing
+ * CI run can upload the Playwright output (snapshots, console logs) as a build artifact.
+ */
+function makeScratchDir(prefix: string): string {
+  const base = path.join(REPO_ROOT, '.qa-brain');
+  mkdirSync(base, { recursive: true });
+  return mkdtempSync(path.join(base, prefix));
+}
 
 interface Site {
   url: string;
@@ -59,7 +68,7 @@ describe('smoke: gateway to Playwright MCP to Chromium', () => {
 
   beforeAll(async () => {
     site = (await startStaticSite()) as Site;
-    home = mkdtempSync(path.join(tmpdir(), 'qa-brain-smoke-'));
+    home = makeScratchDir('smoke-');
     const redactor = createRedactor();
     const config = parseConfig({
       server: { callTimeoutMs: 60_000 },
@@ -216,7 +225,7 @@ describe('smoke: the built CLI binary over stdio', () => {
 
   beforeAll(async () => {
     site = (await startStaticSite()) as Site;
-    home = mkdtempSync(path.join(tmpdir(), 'qa-brain-cli-'));
+    home = makeScratchDir('cli-');
   });
 
   afterAll(async () => {
