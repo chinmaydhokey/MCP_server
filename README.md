@@ -66,9 +66,9 @@ claude mcp add --transport stdio --scope project qa-brain \
 Then ask the model to `qa_run_start`, `web_navigate` to your app, `web_snapshot`, and act on the `[ref=eN]`
 targets it sees. Configuration snippets for Codex, Cursor and Claude Desktop are in
 [client setup](./docs/client-setup.md). With no config file present the gateway uses built-in defaults (one
-Playwright upstream, SQLite under `QA_BRAIN_HOME`); drop a `qa-brain.config.json` next to the repo root to
-change them — the schema is `packages/core/src/config-schema.ts` and the keys are documented in
-[deployment](./docs/deployment.md).
+Playwright upstream, SQLite under `QA_BRAIN_HOME`); copy
+[`qa-brain.config.example.json`](./qa-brain.config.example.json) to `qa-brain.config.json` to change them.
+Hosted-mode compose files live in [`deploy/`](./deploy/) — see [deployment](./docs/deployment.md).
 
 ## Command line
 

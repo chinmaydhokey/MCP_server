@@ -1,0 +1,212 @@
+# QA Brain -- HOSTED mode configuration.
+#
+# Mounted read-only at /config/qa-brain.yaml by deploy/docker-compose.yml and read by all
+# three processes that run the gateway image: `serve --transport http`, `worker`, and the
+# one-shot `db migrate`.
+#
+# The local (stdio + SQLite) counterpart is qa-brain.config.example.json at the repository
+# root. Both files validate against the same zod schema in packages/core/src/config-schema.ts
+# -- one binary, one schema, two deployment shapes (docs/deployment.md section 1).
+#
+# ============================ M0 STATUS: DESIGN ARTEFACT ================================
+# `store.driver: pg`, `artifacts.driver: s3` and an HTTP upstream are all valid schema today,
+# but the code paths behind them land in milestone M5 (Feb 2027). M0 implements stdio +
+# SQLite + a stdio Playwright child. Nothing here is load-bearing yet.
+# =======================================================================================
+#
+# `${VAR}` and `${VAR:-default}` are expanded by the config loader before validation, and
+# every expanded value is registered with the redactor, so it can never surface in a log line
+# or an action_log row (docs/deployment.md section 6). Defaults come from deploy/.env.
+
+server:
+  name: qa-brain
+  # ttlMs advertised on tools/list. The list is sorted by name and cacheable with
+  # cacheScope: 'public' -- stable ordering keeps client-side prompt caches warm.
+  toolsListTtlMs: ${QA_BRAIN_TOOLS_LIST_TTL_MS:-300000}
+  # Must stay <= the sidecar's PLAYWRIGHT_MCP_PING_TIMEOUT_MS (60000). Playwright MCP's HTTP
+  # mode closes a session that misses the server-initiated ping, and behind the egress proxy
+  # a slow navigation will miss the 5 s default -- surfacing as a bogus "Session not found"
+  # in the middle of a tool call.
+  callTimeoutMs: ${QA_BRAIN_CALL_TIMEOUT_MS:-60000}
+  # ~20k tokens. Over-cap results are truncated with a `[truncated N chars]` marker rather
+  # than dropped, so the model can tell the difference between "small" and "clipped".
+  maxResultChars: ${QA_BRAIN_MAX_RESULT_CHARS:-80000}
+  # Keep the not-yet-implemented qa_* stubs out of tools/list in production.
+  exposeStubs: ${QA_BRAIN_EXPOSE_STUBS:-false}
+
+store:
+  driver: pg
+  # M5 WIRING NOTE: this URL carries NO password. Postgres reads its own password from the
+  # `pg_password` Compose secret (POSTGRES_PASSWORD_FILE), and the app services get the same
+  # file at /run/secrets/pg_password via QA_BRAIN_DATABASE_PASSWORD_FILE. The store config
+  # gains a `passwordFile` key in M5 to consume it. Until then an operator who needs this
+  # working today can put credentials directly in QA_BRAIN_DATABASE_URL in deploy/.env --
+  # the loader registers every expanded value with the redactor, so the password still
+  # cannot be logged, but it does become visible to `docker inspect`, which the file secret
+  # avoids. That trade is the reason the key is deferred rather than improvised here.
+  url: ${QA_BRAIN_DATABASE_URL}
+  # 100 max_connections on the server, shared between the gateway, N workers and pg-boss.
+  poolMax: ${QA_BRAIN_DB_POOL_MAX:-10}
+
+artifacts:
+  driver: s3
+  bucket: ${QA_BRAIN_S3_BUCKET:-qa-brain-artifacts}
+  endpoint: ${QA_BRAIN_S3_ENDPOINT:-http://seaweedfs:8333}
+  region: ${QA_BRAIN_S3_REGION:-us-east-1}
+  prefix: ${QA_BRAIN_S3_PREFIX:-}
+  # SeaweedFS has no virtual-host-style bucket addressing, so path style is mandatory here,
+  # not a preference.
+  forcePathStyle: true
+
+log:
+  level: ${QA_BRAIN_LOG_LEVEL:-info}
+  # shape = keys and types only ({"url":"string"}), never values. `redacted` is the local
+  # default; hosted mode keeps shapes because one action_log serves several projects.
+  # args_hash (sha256 of canonical JSON) is stored either way, so the step cache and
+  # duplicate detection work without persisting a single argument value.
+  argsMode: ${QA_BRAIN_LOG_ARGS_MODE:-shape}
+
+http:
+  # 0.0.0.0 INSIDE the container only. Nothing publishes this port in production: Caddy is
+  # the sole client and it lives on the `edge` network. The container is the boundary here,
+  # not the bind address.
+  host: 0.0.0.0
+  port: 8080
+  # Name of the env var holding the bearer token. M0/local only -- hosted mode replaces the
+  # single static token with argon2id-hashed api_key rows in M5 (ADR-0012), and
+  # `requireBearerAuth` looks the key id up and verifies in constant time.
+  bearerTokenEnv: QA_BRAIN_TOKEN
+  # Never true off loopback. The CLI refuses it on a non-loopback bind, and `qa-brain doctor`
+  # flags the combination.
+  allowUnauthenticated: false
+  # Non-empty lists switch the transport from localhostHostValidation()/originValidation()
+  # defaults to explicit allow-lists. A mismatched Host or Origin gets 403, which is what the
+  # Streamable HTTP spec requires and what stops DNS rebinding (threat model T8).
+  allowedHosts:
+    - ${QA_BRAIN_PUBLIC_HOST:-qa.example.com}
+  allowedOrigins:
+    - ${QA_BRAIN_PUBLIC_URL:-https://qa.example.com}
+
+mcpServers:
+  playwright:
+    # Streamable HTTP to the sidecar, not a stdio child: in hosted mode the browser runs in
+    # its own container on the internal `browsers` network with its own seccomp profile, so
+    # a browser compromise does not land inside the gateway process.
+    url: ${QA_BRAIN_PLAYWRIGHT_URL:-http://playwright-mcp:8931/mcp}
+    headers: {}
+    adapter: playwright
+    # Public names are `prefix + upstreamName.replace(strip, '')`: browser_click -> web_click.
+    # A collision with a native qa_* name or another upstream is a startup error, never a
+    # silent shadow.
+    prefix: web_
+    strip: browser_
+    # A browser holds state, so the upstream is long-lived and never spawned per request.
+    longLived: true
+
+    # -----------------------------------------------------------------------------------
+    # The curated surface. Names here are UPSTREAM names (browser_*), not public ones.
+    #
+    # Precedence: block beats allow beats hidden. `qa_call_tool` goes through the same
+    # lookup, so a hidden tool is reachable through it and a blocked tool is not -- there is
+    # no path from the model to a blocked name (docs/tool-catalog.md, threat model T1).
+    # -----------------------------------------------------------------------------------
+    tools:
+      # 15 listed by default. Together with 7 native qa_* tools that is the 22-tool surface:
+      # small on purpose, because tool-selection accuracy degrades past 30-50 tools and every
+      # listed schema costs context on every turn.
+      allow:
+        - browser_navigate
+        - browser_snapshot
+        - browser_find
+        - browser_click
+        - browser_type
+        - browser_fill_form
+        - browser_select_option
+        - browser_press_key
+        - browser_hover
+        - browser_wait_for
+        - browser_take_screenshot
+        - browser_console_messages
+        - browser_handle_dialog
+        - browser_verify_text_visible
+        - browser_verify_element_visible
+
+      # Allowed but not listed: reachable through qa_search_tools -> qa_describe_tool ->
+      # qa_call_tool. Progressive disclosure, not a security boundary -- these run through
+      # the identical Router path, timeout, size cap and action_log.
+      hidden:
+        - browser_navigate_back
+        - browser_tabs
+        - browser_network_requests
+        - browser_network_request
+        - browser_generate_locator
+        - browser_verify_value
+        - browser_verify_list_visible
+        - browser_drag
+        - browser_drop
+        # Touches the local filesystem; stays hidden until the artefact store mediates paths.
+        - browser_file_upload
+        - browser_resize
+        - browser_close
+
+      # Never callable, including through qa_call_tool. Returns isError `blocked_tool`.
+      block:
+        # Playwright's own config.d.ts calls this RCE-equivalent: it executes arbitrary
+        # JavaScript in the Playwright server process.
+        - browser_run_code_unsafe
+        # A "core" tool, blocked anyway: page-context JavaScript reads document.cookie and
+        # localStorage and can fetch cross-origin with the page's credentials. Coverage
+        # collection for impact analysis reads window.__coverage__ through an internal path,
+        # never through a tool the model can call.
+        - browser_evaluate
+        # The families below do not even exist in the child under --caps=testing. They are
+        # listed anyway as defence in depth: if a future Playwright release promotes one of
+        # them to a default capability, it arrives blocked rather than exposed.
+        - browser_mouse_click_xy
+        - browser_mouse_down
+        - browser_mouse_drag_xy
+        - browser_mouse_move_xy
+        - browser_mouse_up
+        - browser_mouse_wheel
+        - browser_pdf_save
+        - browser_start_tracing
+        - browser_stop_tracing
+        - browser_start_video
+        - browser_stop_video
+        - browser_route
+        - browser_unroute
+        - browser_route_list
+        - browser_network_state_set
+        - browser_storage_state
+        - browser_set_storage_state
+        - browser_get_config
+
+    # Liveness: `server/discover` (modern era) or `ping` (legacy) every 60 s, 5 s timeout,
+    # three consecutive strikes before a restart. A degraded upstream keeps its names in
+    # tools/list and answers isError with a recovery hint -- a name that vanishes keeps being
+    # called from conversation history anyway.
+    health:
+      intervalMs: 60000
+      timeoutMs: 5000
+      unhealthyThreshold: 3
+
+    # Exponential backoff, 1 s -> 30 s, five attempts. Past that the upstream stays failed
+    # and /readyz reports 503 rather than restart-looping a broken sidecar forever.
+    restart:
+      maxAttempts: 5
+      baseMs: 1000
+      maxMs: 30000
+
+# ---------------------------------------------------------------------------------------
+# Not configured here, on purpose:
+#
+#   mcpServers.mobile   appium-mcp is spawned by the worker as a stdio child only when a
+#                       mobile job arrives (M6), never as a long-lived upstream and never as
+#                       a Compose service -- there is no Android emulator in this stack
+#                       because emulators need /dev/kvm or privileged kernel modules that
+#                       Docker Desktop cannot provide (docs/deployment.md section 9).
+#
+#   projects[].allowedOrigins   per-project application-under-test origins (M1). Until then
+#                               the egress ACL in deploy/egress/acl.yaml is where the
+#                               allow-list lives.
+# ---------------------------------------------------------------------------------------

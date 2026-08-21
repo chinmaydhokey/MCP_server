@@ -1,0 +1,122 @@
+---
+# QA Brain -- Smokescreen egress ACL for the `browsers` network.
+#
+# Mounted read-only at /etc/smokescreen/acl.yaml. This is the last line of defence for
+# threats T2 (SSRF / cloud-metadata) and T3 (exfiltration to an attacker origin) in
+# docs/security-threat-model.md.
+#
+# ============================ M0 STATUS: DESIGN ARTEFACT ================================
+# The gateway's in-process URL guard (assertSafeUrl) is live in M0. This proxy is part of
+# hosted mode and starts enforcing in milestone M5 (Feb 2027).
+# =======================================================================================
+#
+# WHAT THIS FILE DOES AND DOES NOT DO
+#
+# It allow-lists DOMAINS. It does not list IP ranges, because Smokescreen's ACL format has
+# no CIDR syntax -- and it does not need one:
+#
+#   * RFC 1918 (10/8, 172.16/12, 192.168/16), loopback, link-local and 169.254.169.254 are
+#     DENIED BY DEFAULT by the proxy itself. That default is inverted only by
+#     `unsafe_allow_private_ranges: true`, which deploy/egress/smokescreen.yaml sets to
+#     false explicitly rather than relying on the default, and the compose command repeats
+#     the same ranges as --deny-range flags. Three statements of the same rule is deliberate:
+#     any one of them being edited by accident still leaves two.
+#   * Smokescreen resolves DNS ITSELF at connect time and checks the resolved address, so
+#     a hostname that resolves to a private address is refused at connect, and DNS rebinding
+#     between the gateway's URL-guard lookup and the browser's connect has nothing to win.
+#     This is why the MCP security best-practices page names this proxy specifically.
+#   * It sees REDIRECTS. The gateway's URL guard only sees the URL the model asked for;
+#     a 302 to http://169.254.169.254/ is invisible to it and fatal without this proxy.
+#
+# ROLES, AND WHY `default` IS THE ONE THAT MATTERS HERE
+#
+# Smokescreen picks a per-service rule using a "role" taken from the client's TLS
+# certificate CN (or a custom RoleFromRequest built into a wrapper binary). QA Brain's
+# browser sidecar talks plain HTTP to the proxy on an internal network and presents no
+# client certificate, so `allow_missing_role: true` is set in the server config and EVERY
+# request is evaluated against the `default:` rule below.
+#
+# The named entry under `services:` is therefore INERT today. It is kept because it is the
+# shape the ACL takes the moment mTLS between the sidecar and the proxy is introduced
+# (M5+), and because per-project ACLs -- one service entry per application under test --
+# are how `projects[].allowedOrigins` gets enforced at the network layer.
+
+version: v1
+
+services:
+  # Inert until client certificates exist (see above). CN would be `playwright-mcp`.
+  - name: playwright-mcp
+    project: qa-brain
+    # enforce = deny anything not in allowed_domains, and log the denial.
+    # The other two policies exist and are wrong here:
+    #   open   -> allows everything for this role. Never use it for a browser.
+    #   report -> allows everything and only warns. Useful for ONE deployment: discovering
+    #             which domains a new application under test actually needs. Switch to
+    #             enforce as soon as the list stops growing, and never leave it on.
+    action: enforce
+    allowed_domains:
+      - app.example.test
+      - "*.app.example.test"
+
+# The rule every request actually hits. Replace the placeholders with the domains of the
+# application under test before this proxy carries real traffic.
+#
+# Globbing: `*.example.com` is valid, `example.com` is valid, and `*example.com`,
+# `api.*.example.com` and `example.*` are all rejected at load time -- a leading `*.` label
+# is the only wildcard Smokescreen accepts.
+default:
+  name: default
+  project: qa-brain
+  action: enforce
+  allowed_domains:
+    # --- the application under test -----------------------------------------------------
+    - app.example.test
+    - "*.app.example.test"
+    # --- staging / preview environments, if the tests target them -----------------------
+    # - "*.staging.example.test"
+
+    # NOTE what is NOT here: no CDN, no font host, no analytics domain, no error reporter.
+    # Add them only if a test genuinely fails without them. Every extra domain is an extra
+    # place a prompt-injected page can send a screenshot of a logged-in session, and
+    # "example.com" style catch-alls defeat the entire control.
+
+# ---------------------------------------------------------------------------------------
+# DEFAULT-DENY EXAMPLE
+#
+# The strictest useful configuration -- nothing reaches the internet at all, which is right
+# for a stack whose application under test is itself a container on a shared network, or for
+# a first boot before the domain list is known:
+#
+#   default:
+#     name: default
+#     project: qa-brain
+#     action: enforce
+#     allowed_domains: []
+#
+# An empty list under `enforce` denies every destination. Expect the browser to report
+# ERR_TUNNEL_CONNECTION_FAILED and Smokescreen to log one denial line per attempt naming the
+# host -- which is, conveniently, how you build the allow-list: run once with `[]`, read the
+# denials, add exactly those domains.
+# ---------------------------------------------------------------------------------------
+
+# Global lists apply across every role. They override the per-service policy but NOT a
+# domain explicitly named in a role's allowed_domains -- so a global deny is a strong hint,
+# not an unbreakable rule, and the per-role list stays the source of truth.
+#
+# These entries are belt-and-braces on top of the IP-level denial: they stop a request from
+# even being attempted when it is aimed at a name that is only ever internal.
+global_deny_list:
+  # Cloud metadata by name (the address 169.254.169.254 is already denied at the IP layer).
+  - metadata.google.internal
+  # `*.internal` and `localhost` are also rejected by the gateway's URL guard; repeating
+  # them here covers the redirect case the guard cannot see.
+  - "*.internal"
+  - localhost
+  - "*.localhost"
+  # Kubernetes-style service discovery, in case this stack is ever moved onto a cluster.
+  - "*.cluster.local"
+  - "*.svc"
+
+# Left empty on purpose. A global allow entry is granted to EVERY role regardless of policy,
+# which is the one way to punch a hole through `enforce` by accident.
+global_allow_list: []

@@ -1,0 +1,135 @@
+# QA Brain -- OpenTelemetry Collector pipeline (docs/observability.md section 8).
+#
+# Mounted read-only at /etc/otelcol/collector.yaml. The gateway and worker export OTLP/HTTP
+# to :4318; this forwards traces to Jaeger (dev) or Tempo (prod) and exposes metrics for
+# Prometheus on :8889.
+#
+# ============================ M0 STATUS: DESIGN ARTEFACT ================================
+# packages/gateway/src/otel.ts ships as a no-op facade in M0: the router calls
+# startServerSpan()/startClientSpan()/recordCall() at the right points but records nothing,
+# and the gateway has no @opentelemetry/* dependency yet. What IS live in M0 is the
+# correlation substrate -- _meta.traceparent passthrough, a minted traceparent when the
+# client sends none, action_log.traceparent, and trace_id/span_id on every pino line. The
+# OTLP-backed implementation and this pipeline land in milestone M5 (Feb 2027).
+# =======================================================================================
+#
+# `${env:VAR:-default}` is the collector's own expansion syntax, not Compose's.
+
+receivers:
+  otlp:
+    protocols:
+      # 0.0.0.0 inside a container on the internal `data` network. The collector binds no
+      # published port in production; the dev overlay publishes both on 127.0.0.1 so a
+      # gateway running on the host in stdio mode can export to it.
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  # MUST be first in every pipeline. Without it a burst of spans -- exactly what a runaway
+  # test run produces -- grows the collector's heap until the OOM killer takes it, and a
+  # dead collector back-pressures the gateway. limit_mib stays under the container mem_limit
+  # (512m) so the limiter, not the kernel, is what pushes back.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: ${env:QA_BRAIN_OTEL_MEMORY_LIMIT_MIB:-384}
+    spike_limit_mib: 96
+
+  # Two OTel GenAI semconv attributes are opt-in only: gen_ai.tool.call.arguments and
+  # gen_ai.tool.call.result. The gateway never sets them unless QA_BRAIN_TRACE_ARGS=1, and
+  # even then it attaches REDACTED arguments, never raw ones. This processor deletes them
+  # again on the way through, so the trace backend cannot become a side channel around the
+  # action log's rule: shape by default, redacted values on request, raw values never.
+  #
+  # TO OPT IN you must make two deliberate changes, not one: set QA_BRAIN_TRACE_ARGS=1 on the
+  # gateway AND remove `attributes/gen-ai-redact` from the traces pipeline below. The
+  # collector has no conditional pipelines -- a processor is either in the list or it is not
+  # -- so the opt-in is an edit here rather than an environment variable, which is the
+  # safer default of the two.
+  attributes/gen-ai-redact:
+    actions:
+      - key: gen_ai.tool.call.arguments
+        action: delete
+      - key: gen_ai.tool.call.result
+        action: delete
+
+  # Batching is what makes OTLP cheap: one request per 5 s or 1024 spans instead of one per
+  # span. Always AFTER memory_limiter, or the batcher's own buffer escapes the limit.
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+exporters:
+  # DEVIATION from docs/observability.md, which names two exporters `otlp/jaeger` and
+  # `otlp/tempo`. Pipelines in the collector are static -- there is no way to select an
+  # exporter at runtime -- so declaring both would mean every trace is sent to both, and the
+  # backend that is not running would log export failures forever. One exporter with an
+  # env-driven endpoint gives the same result with none of that noise:
+  #
+  #   dev  overlay: QA_BRAIN_OTEL_TRACES_ENDPOINT=jaeger:4317   (Jaeger 2 speaks OTLP natively)
+  #   prod overlay: QA_BRAIN_OTEL_TRACES_ENDPOINT=tempo:4317
+  #
+  # tls.insecure is correct here and only here: this hop never leaves the `data` network,
+  # which is `internal: true`.
+  otlp/traces:
+    endpoint: ${env:QA_BRAIN_OTEL_TRACES_ENDPOINT:-jaeger:4317}
+    tls:
+      insecure: true
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      # Bounded: telemetry must never queue indefinitely at the cost of the memory the
+      # limiter above is trying to protect.
+      max_elapsed_time: 120s
+    sending_queue:
+      enabled: true
+      queue_size: 1000
+
+  # Scrape target for Prometheus. resource_to_telemetry_conversion promotes resource
+  # attributes (service.name, deployment.environment) to labels so `qa-brain` and
+  # `qa-brain-worker` are distinguishable in a query.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # `basic` prints one summary line per batch. Verbosity `detailed` dumps every attribute,
+  # which would defeat the redaction processor above -- do not raise it in a shared
+  # deployment.
+  debug:
+    verbosity: basic
+
+extensions:
+  # Answers on :13133. There is no Compose healthcheck wired to it because the
+  # collector-contrib image is distroless (no shell, no wget, no curl) and Docker
+  # healthchecks run a binary from inside the image; an external uptime probe or a
+  # sidecar-less monitoring agent is what consumes this.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: ${env:QA_BRAIN_OTEL_LOG_LEVEL:-info}
+  pipelines:
+    # One proxied tool call produces a SERVER span (`tools/call web_click`) and a CLIENT span
+    # (`tools/call browser_click`) in the same trace, joined by the traceparent the gateway
+    # forwards in the upstream call's _meta.
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, attributes/gen-ai-redact, batch]
+      exporters: [otlp/traces, debug]
+
+    # mcp.server.operation.duration, mcp.client.operation.duration, qa_brain.tool.calls,
+    # qa_brain.heal.attempts, gen_ai.client.token.usage, qa_brain.llm.cost_usd,
+    # qa_brain.upstream.restarts, qa_brain.queue.depth (docs/observability.md section 4).
+    # No redaction processor: metric attributes are a fixed low-cardinality vocabulary and
+    # never carry argument values.
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, debug]
