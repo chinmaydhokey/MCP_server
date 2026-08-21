@@ -17,7 +17,9 @@ export class MissingEnvError extends Error {
   }
 }
 
-const PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g;
+// Quantifiers are bounded: an unbounded name/default makes this polynomial on adversarial input
+// (CodeQL js/polynomial-redos). A 64-character variable name and a 1 KiB default cover every real config.
+const PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]{0,63})(?::-([^}]{0,1024}))?\}/g;
 
 export interface ExpandResult<T> {
   value: T;

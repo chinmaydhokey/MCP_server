@@ -11,7 +11,46 @@ export const REDACTED = '[REDACTED]';
 export const SENSITIVE_KEY_PATTERN =
   /(pass(word|phrase)?|secret|token|api[-_]?key|authorization|auth|cookie|session[-_]?id|credential|private[-_]?key|bearer)/i;
 
+/**
+ * PEM private keys are redacted by a linear scan rather than a regex.
+ * `-----BEGIN [A-Z ]*PRIVATE KEY-----` is ambiguous — the character class can also match the literal that
+ * follows it — which CodeQL flags as polynomial ReDoS (`js/polynomial-redos`). This function runs over
+ * attacker-controlled page content, so that is a denial-of-service primitive rather than a style nit.
+ */
+const PEM_BEGIN = '-----BEGIN ';
+const PEM_KEY_SUFFIX = 'PRIVATE KEY-----';
+const LF = '\n';
+/** A PEM header is one short line: `-----BEGIN RSA PRIVATE KEY-----`. */
+const MAX_PEM_HEADER_LENGTH = 64;
+
+export function redactPemBlocks(input: string, replacement: string): string {
+  if (!input.includes(PEM_KEY_SUFFIX)) return input;
+  let out = '';
+  let cursor = 0;
+  let matched = false;
+  for (;;) {
+    const begin = input.indexOf(PEM_BEGIN, cursor);
+    if (begin === -1) break;
+    const headerEnd = input.indexOf(PEM_KEY_SUFFIX, begin);
+    const header = headerEnd === -1 ? '' : input.slice(begin, headerEnd);
+    if (headerEnd === -1 || header.length > MAX_PEM_HEADER_LENGTH || header.includes(LF)) {
+      // Not a PEM header — keep the text and continue past this `-----BEGIN `.
+      out += input.slice(cursor, begin + PEM_BEGIN.length);
+      cursor = begin + PEM_BEGIN.length;
+      continue;
+    }
+    const footerStart = input.indexOf(PEM_KEY_SUFFIX, headerEnd + PEM_KEY_SUFFIX.length);
+    // An unterminated block still gets redacted to the end: a truncated key is a leaked key.
+    const end = footerStart === -1 ? input.length : footerStart + PEM_KEY_SUFFIX.length;
+    out += input.slice(cursor, begin) + replacement;
+    cursor = end;
+    matched = true;
+  }
+  return matched ? out + input.slice(cursor) : input;
+}
+
 /** Value patterns that are redacted wherever they appear (inside strings too). */
+
 export const SENSITIVE_VALUE_PATTERNS: readonly RegExp[] = [
   /github_pat_[A-Za-z0-9_]{20,}/g, // GitHub fine-grained PAT
   /gh[pousr]_[A-Za-z0-9]{20,}/g, // GitHub classic tokens (ghp_, gho_, ghu_, ghs_, ghr_)
@@ -20,7 +59,6 @@ export const SENSITIVE_VALUE_PATTERNS: readonly RegExp[] = [
   /AKIA[0-9A-Z]{16}/g, // AWS access key id
   /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, // JWT
   /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/gi, // Authorization: Bearer …
-  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
 ];
 
 export interface Redactor {
@@ -73,6 +111,7 @@ export function createRedactor(literalSecrets: readonly string[] = []): Redactor
     let out = input;
     if (literalPattern) out = out.replace(literalPattern, REDACTED);
     for (const p of SENSITIVE_VALUE_PATTERNS) out = out.replace(p, REDACTED);
+    out = redactPemBlocks(out, REDACTED);
     return out;
   };
 
