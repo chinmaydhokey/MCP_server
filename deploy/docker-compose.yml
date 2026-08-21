@@ -276,7 +276,7 @@ services:
       - --proxy-server
       - http://egress:4750
       - --timeout-action
-      - "5000"
+      - "10000"
       - --timeout-navigation
       - "30000"
       - --timeout-settle

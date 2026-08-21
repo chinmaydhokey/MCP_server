@@ -51,7 +51,7 @@ The gateway does not call `npx` and does not depend on `@playwright/mcp` (0.0.79
 ```text
 node <playwright pkg dir>/cli.js mcp --headless --isolated --caps=testing \
   --snapshot-mode=full --image-responses=omit --codegen none \
-  --output-dir <QA_BRAIN_HOME>/pw-out --timeout-action 5000 --timeout-navigation 30000
+  --output-dir <QA_BRAIN_HOME>/pw-out --timeout-action 10000 --timeout-navigation 30000
 ```
 
 via `StdioClientTransport({ command: process.execPath, args, env, cwd, stderr: 'pipe' })` from `@modelcontextprotocol/client/stdio`. Spawning `node` directly sidesteps the Windows `.cmd` shim problem (Node ≥ 20 refuses to spawn `.cmd` files without `shell: true`) and guarantees that the MCP server, the browser revision, and the CI runner share one Playwright version. The verified handshake returns `serverInfo {name:"Playwright", version:"1.62.1"}` in about 700 ms and 29 tools with `--caps=testing`; the gateway lists 15 of them as `web_*` by default ([tool catalog](./tool-catalog.md)). `--isolated` keeps the browser profile in memory, and `--image-responses=omit` keeps screenshots out of the LLM context.
@@ -144,7 +144,7 @@ playwright mcp --headless --browser chromium --isolated \
   --caps=testing --snapshot-mode=full --image-responses=omit --codegen none \
   --output-dir /artifacts --output-max-size 524288000 --save-session \
   --secrets /run/secrets/aut_secrets --proxy-server http://egress:4750 \
-  --timeout-action 5000 --timeout-navigation 30000 --timeout-settle 500
+  --timeout-action 10000 --timeout-navigation 30000 --timeout-settle 500
 ```
 
 Environment: `PLAYWRIGHT_MCP_PING_TIMEOUT_MS=60000`. Playwright MCP's HTTP mode sends a server-initiated ping and closes the session after 5 s without an answer, which surfaces as `Session not found` during any tool call longer than the heartbeat; since 0.0.77 this variable overrides the timeout and `0` disables it ([microsoft/playwright#41391](https://github.com/microsoft/playwright/pull/41391)). 60 s matches the gateway's `server.callTimeoutMs`. `--allowed-hosts playwright-mcp` is the sidecar's own DNS-rebinding guard (the worker addresses it by service name), `--secrets` points at a Compose secret file so application credentials never appear in argv or tool output, and `--output-max-size` (500 MiB) makes Playwright evict old files from `/artifacts` before the volume fills.

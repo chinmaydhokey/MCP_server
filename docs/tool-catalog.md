@@ -19,7 +19,7 @@ The mapping functions live in `packages/core/src/tool-name.ts` (`toPublicToolNam
 
 ## 2. Default surface: 15 proxied `web_*` tools
 
-The Playwright child is launched as `node <playwright>/cli.js mcp --headless --isolated --caps=testing --snapshot-mode=full --image-responses=omit --codegen none --output-dir <QA_BRAIN_HOME>/pw-out --timeout-action 5000 --timeout-navigation 30000` and advertises 29 tools (`--caps=testing` adds `browser_generate_locator` and four `browser_verify_*` tools). Fifteen are listed. Input shapes below are Playwright 1.62.1's; `target` is the `[ref=eN]` string from a snapshot or a unique Playwright selector, and `element` is a human-readable description used for permission prompts and logs.
+The Playwright child is launched as `node <playwright>/cli.js mcp --headless --isolated --caps=testing --snapshot-mode=full --image-responses=omit --codegen none --output-dir <QA_BRAIN_HOME>/pw-out --timeout-action 10000 --timeout-navigation 30000` and advertises 29 tools (`--caps=testing` adds `browser_generate_locator` and four `browser_verify_*` tools). Fifteen are listed. Input shapes below are Playwright 1.62.1's; `target` is the `[ref=eN]` string from a snapshot or a unique Playwright selector, and `element` is a human-readable description used for permission prompts and logs.
 
 | Public name | Upstream | Input (required in bold) | Output | Notes |
 |---|---|---|---|---|

@@ -8,7 +8,7 @@ import path from 'node:path';
  *   advertises vision/pdf/devtools; verified on playwright 1.62.1).
  * - `--image-responses=omit`: screenshots are saved to the output dir instead of inflating tool results.
  * - `--codegen none`: do not append generated code to every action result (token savings).
- * - timeouts tuned for CI (navigation 30 s instead of 60 s).
+ * - timeouts tuned for CI (action 10 s instead of 5 s, navigation 30 s instead of 60 s).
  */
 export function defaultPlaywrightMcpArgs(homeDir: string): string[] {
   return [
@@ -23,7 +23,10 @@ export function defaultPlaywrightMcpArgs(homeDir: string): string[] {
     '--output-dir',
     path.join(homeDir, 'pw-out'),
     '--timeout-action',
-    '5000',
+    // Playwright's CLI default is 5000. The MCP path adds an accessibility snapshot and a settle wait to
+    // every action, and a cold CI runner's first click routinely exceeds 5 s (observed on windows-latest),
+    // so QA Brain defaults to 10 s: still fast enough to surface a genuinely stuck page.
+    '10000',
     '--timeout-navigation',
     '30000',
   ];

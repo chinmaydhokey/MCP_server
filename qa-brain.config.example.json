@@ -112,7 +112,7 @@
         "",
         "  node <playwright pkg dir>/cli.js mcp --headless --isolated --caps=testing",
         "       --snapshot-mode=full --image-responses=omit --codegen none",
-        "       --output-dir <QA_BRAIN_HOME>/pw-out --timeout-action 5000 --timeout-navigation 30000",
+        "       --output-dir <QA_BRAIN_HOME>/pw-out --timeout-action 10000 --timeout-navigation 30000",
         "",
         "Leaving 'args' empty gets exactly that list. Setting it replaces the whole list, so",
         "copy the flags you want to keep. Two reasons for this shape: spawning `node` directly",

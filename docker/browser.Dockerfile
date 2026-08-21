@@ -155,7 +155,7 @@ ENTRYPOINT ["node", "/app/packages/adapter-playwright/node_modules/playwright/cl
 #   --output-dir /artifacts        the artefacts volume
 #   --output-max-size 524288000    500 MiB: Playwright evicts old files before the volume fills
 #   --proxy-server http://egress:4750  every byte the browser sends leaves through Smokescreen
-#   --timeout-action 5000          matches the local adapter
+#   --timeout-action 10000          matches the local adapter
 #   --timeout-navigation 30000     30 s instead of the 60 s default; CI-tuned
 #   --timeout-settle 500           default, pinned so a future default change is visible
 #
@@ -177,6 +177,6 @@ CMD ["--headless", \
      "--output-dir", "/artifacts", \
      "--output-max-size", "524288000", \
      "--proxy-server", "http://egress:4750", \
-     "--timeout-action", "5000", \
+     "--timeout-action", "10000", \
      "--timeout-navigation", "30000", \
      "--timeout-settle", "500"]
