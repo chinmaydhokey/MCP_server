@@ -1,9 +1,16 @@
 import path from 'node:path';
 import { adapterFor } from '@qa-brain/adapter-playwright';
-import { type QaBrainConfig, type Redactor, type StoreAdapter, type UpstreamAdapter, VERSION, createRedactor } from '@qa-brain/core';
+import {
+  createRedactor,
+  type QaBrainConfig,
+  type Redactor,
+  type StoreAdapter,
+  type UpstreamAdapter,
+  VERSION,
+} from '@qa-brain/core';
 import { createStore } from '@qa-brain/store';
 import { ActionLog } from './log/action-log.js';
-import { type Logger, createLogger } from './log/logger.js';
+import { createLogger, type Logger } from './log/logger.js';
 import { ToolRegistry } from './registry/tool-registry.js';
 import { Router } from './router/router.js';
 import { type BuildServerInput, buildServer } from './server/build-server.js';
@@ -41,7 +48,9 @@ export interface Gateway {
   /** Starts store + upstreams and builds the registry. Idempotent. */
   start(): Promise<void>;
   /** Builds a per-connection MCP server instance. */
-  buildServer(input: Pick<BuildServerInput, 'transport' | 'principal' | 'era'>): ReturnType<typeof buildServer>;
+  buildServer(
+    input: Pick<BuildServerInput, 'transport' | 'principal' | 'era'>,
+  ): ReturnType<typeof buildServer>;
   status(): UpstreamStatus[];
   close(): Promise<void>;
 }
@@ -67,7 +76,9 @@ export async function createGateway(opts: GatewayOptions): Promise<Gateway> {
     maxListed: opts.maxListedTools ?? 25,
     logger,
   });
-  const eraCache = new EraCache(opts.eraCacheFile === undefined ? path.join(homeDir, 'era-cache.json') : opts.eraCacheFile);
+  const eraCache = new EraCache(
+    opts.eraCacheFile === undefined ? path.join(homeDir, 'era-cache.json') : opts.eraCacheFile,
+  );
 
   const upstreams = new Map<string, UpstreamManager>();
   const adapters = new Map<string, UpstreamAdapter>();
@@ -85,6 +96,17 @@ export async function createGateway(opts: GatewayOptions): Promise<Gateway> {
         redactor,
         eraCache,
         transportFactory: opts.transportFactories?.[id],
+        // A restarted upstream re-publishes its tools (they may have been missing if the first connect failed).
+        onReady: (manager) => {
+          try {
+            registerTools(manager);
+          } catch (err) {
+            logger.error(
+              { upstream: manager.id, err },
+              'failed to register tools after upstream (re)connect',
+            );
+          }
+        },
       }),
     );
   }
@@ -115,23 +137,36 @@ export async function createGateway(opts: GatewayOptions): Promise<Gateway> {
   let started: Promise<void> | null = null;
   let sweeper: NodeJS.Timeout | null = null;
 
+  /** Registers (or refreshes) one upstream's tools. Idempotent, so restarts can call it again. */
+  const registerTools = (u: UpstreamManager) => {
+    const upstreamConfig = config.mcpServers[u.id];
+    const adapter = adapters.get(u.id);
+    if (upstreamConfig && adapter) registry.registerUpstream(u, upstreamConfig, adapter);
+  };
+
   const start = async () => {
     for (const tool of [...nativeTools, ...stubs]) registry.registerNative(tool);
-    const results = await Promise.allSettled(
-      [...upstreams.values()].map(async (u) => {
-        await u.start();
-        const upstreamConfig = config.mcpServers[u.id];
-        const adapter = adapters.get(u.id);
-        if (upstreamConfig && adapter) registry.registerUpstream(u, upstreamConfig, adapter);
-      }),
-    );
-    for (const r of results) {
-      if (r.status === 'rejected') logger.error({ err: r.reason }, 'upstream failed to start; its tools are unavailable until it recovers');
+    // Connecting is tolerant: a dead upstream must not stop the gateway (its tools answer with a recovery
+    // hint until it recovers). Registration is NOT tolerant: a tool-name collision is a configuration error
+    // and must fail loudly at startup rather than silently shadowing a tool.
+    const results = await Promise.allSettled([...upstreams.values()].map((u) => u.start()));
+    for (const [i, r] of results.entries()) {
+      if (r.status === 'rejected') {
+        const id = [...upstreams.keys()][i];
+        logger.error(
+          { upstream: id, err: r.reason },
+          'upstream failed to start; its tools are unavailable until it recovers',
+        );
+      }
     }
+    for (const u of upstreams.values()) registerTools(u);
     registry.assertBudget();
     sweeper = setInterval(() => void store.handles.sweep().catch(() => undefined), 5 * 60 * 1000);
     sweeper.unref?.();
-    logger.info({ listed: registry.list().length, total: registry.all().length, upstreams: upstreams.size }, 'gateway ready');
+    logger.info(
+      { listed: registry.list().length, total: registry.all().length, upstreams: upstreams.size },
+      'gateway ready',
+    );
   };
 
   const gateway: Gateway = {

@@ -6,18 +6,19 @@ QA Brain persists everything the LLM cannot remember between calls: what was exe
 
 | Concern | Rule | SQLite (`@libsql/client`) | PostgreSQL 18 (`pg`) |
 |---|---|---|---|
-| Primary keys | UUIDv7 ([RFC 9562](https://www.rfc-editor.org/rfc/rfc9562)), **generated in the application** with the `uuidv7` 1.2.1 package so both dialects behave identically and ids sort by creation time | `text` (36-char lowercase) | `uuid`, plus `DEFAULT uuidv7()` as a safety net ([PostgreSQL 18 ships `uuidv7()` natively](https://www.postgresql.org/about/news/postgresql-18-released-3142/)) |
+| Primary keys | UUIDv7 ([RFC 9562](https://www.rfc-editor.org/rfc/rfc9562)), **generated in the application** with the `uuidv7` 1.2.1 package so both dialects behave identically and ids sort by creation time | `text` (36-char lowercase) | `uuid`, no column default: the application always supplies the id so both dialects behave identically ([PostgreSQL 18 ships `uuidv7()` natively](https://www.postgresql.org/about/news/postgresql-18-released-3142/), but it is deliberately not relied on) |
 | Handles | `<kind>_<uuidv7>` text keys minted by the gateway (`rn_`, `bh_`, `dh_`, `sn_`, `lk_`), never bare UUIDs, so a handle is self-describing in logs | `text` PK | `text` PK |
-| Timestamps (`ts`) | UTC, millisecond precision | `integer` epoch milliseconds (`integer({ mode: 'timestamp_ms' })`) | `timestamptz` |
+| Timestamps (`ts`) | UTC, millisecond precision, read back as a JavaScript `number` on both dialects | `integer` epoch milliseconds | `bigint` epoch milliseconds (`{ mode: 'number' }`); a deliberate narrowing of ADR-0006 §5 (`timestamptz`) so no per-dialect conversion code exists — see the header comment in `pg.ts` |
 | JSON (`json`) | Stable key order when the value feeds a hash | `text` with Drizzle `{ mode: 'json' }` | `jsonb` |
 | Arrays | Always `json`, never dialect-specific array types | `text` JSON | `jsonb` (not `text[]`) |
-| Enums | One exported `const` tuple per enum in `packages/store/src/schema/enums.ts`, shared by both dialect files and by the zod schemas in `packages/core` | `text({ enum })` + `CHECK (col IN (...))` | `pgEnum` |
+| Enums | One exported `const` tuple per enum in `packages/store/src/schema/enums.ts`, shared by both dialect files; values are validated in the application and in the zod schemas of the callers | `text({ enum })` | `text({ enum })` — not `pgEnum`, because `ALTER TYPE … ADD VALUE` has no SQLite equivalent and would make the two migration trees diverge (note in `enums.ts`) |
 | Booleans | | `integer({ mode: 'boolean' })` | `boolean` |
 | Large counters | | `integer` | `bigint` |
 | Partial indexes | Used for "active" rows | `CREATE INDEX … WHERE` via Drizzle `.where()` | same |
 | Naming | `snake_case` tables and columns, singular table names, `<table>_<cols>_idx` / `_uq` index names; TypeScript properties are `camelCase` | | |
 | Foreign keys | Declared in both dialects; `PRAGMA foreign_keys=ON` is set per libsql connection | | |
 | Soft delete | Only `test_case.deleted_at`; everything else is append-only or hard-deleted by retention jobs | | |
+| CHECK constraints | Only `quarantine_owner_issue_required` (§3.6); enum membership is not enforced by CHECK on either dialect | | |
 
 Per-connection SQLite pragmas set by `sqlite-adapter.ts`: `journal_mode=WAL`, `busy_timeout=5000`, `foreign_keys=ON`, `synchronous=NORMAL`. The default local URL is `file:./.qa-brain/qa-brain.db` (config keys `store.driver: 'sqlite' | 'pg'`, `store.url`).
 
@@ -94,19 +95,19 @@ Indexes: `api_key_project_idx (project_id) WHERE revoked_at IS NULL`.
 
 | Column | Type | Notes |
 |---|---|---|
-| id | text PK | `<kind>_<uuidv7>`, e.g. `rn_0198f3a0-…` |
-| project_id | fk → project | |
+| handle | text PK | `<kind>_<uuidv7>`, e.g. `rn_0198f3a0-…` (the column is named `handle`, not `id`, because it holds a prefixed handle rather than a bare UUID) |
 | kind | enum(`run`,`browser`,`device`,`snapshot`,`lock`) | prefix `rn_`, `bh_`, `dh_`, `sn_`, `lk_` |
 | owner | text | principal that minted it: `api_key.id` in hosted mode, `local` on stdio; checked on every resolve |
+| project_id | fk? → project | |
 | upstream_ref | text? | Playwright context id or Appium `sessionId` |
 | platform | enum(`web`,`android`,`ios`)? | |
 | state | json? | kind-specific payload (`run`: `{ name, meta }`) |
-| ttl_s | integer | `run` = 86400 (24 h), `browser`/`device` = 1800 idle, `snapshot` = 600, `lock` = 300 |
+| ttl_s | integer? | `run` = 86400 (24 h), `browser`/`device` = 1800 idle, `snapshot` = 600, `lock` = 300 |
 | expires_at | ts | |
 | last_used_at, revoked_at | ts? | |
 | created_at | ts | |
 
-Indexes: `handle_expires_idx (expires_at) WHERE revoked_at IS NULL` (the sweeper runs every 5 min), `handle_owner_idx (owner)`.
+Indexes: `handle_expires_at_idx (expires_at) WHERE revoked_at IS NULL` (the sweeper runs every 5 min), `handle_owner_idx (owner)`.
 
 ### 3.2 Tests and revisions
 
@@ -186,7 +187,7 @@ Indexes: `step_fingerprint_active_uq (project_id, cache_key) WHERE status = 'act
 
 ### 3.4 Runs and results
 
-**`run`** — one invocation of the runner (`qa_run_start`/`qa_run_finish` in M0; `qa_run_suite` from M2).
+**`run`** — one invocation of the runner (`qa_run_start`/`qa_run_finish` in M0; `qa_run_test` from M2; `qa_run_suite` with the Tasks extension from M5).
 
 | Column | Type | Notes |
 |---|---|---|
@@ -200,7 +201,7 @@ Indexes: `step_fingerprint_active_uq (project_id, cache_key) WHERE status = 'act
 | infra_outage | boolean | default false; set by error-signature clustering |
 | idempotency_key | text? | `uq(project_id, idempotency_key)`; a repeated `qa_run_suite` returns the existing run |
 | requested_by_api_key_id | fk? → api_key | |
-| task_id | text? fk → task | |
+| task_id | text? | equals `task.id` when the run was started through the Tasks extension; no FK constraint, because the `task` row is written in the same transaction |
 | started_at, finished_at | ts? | |
 | summary | json? | `{ attempts, passed, failed, flaky, healed, quarantined, tokens_in, tokens_out, cost_usd }` |
 | created_at | ts | |
@@ -278,9 +279,9 @@ Indexes: `artifact_run_kind_idx (run_id, kind)`.
 | ts_start | ts | |
 | duration_ms | integer | |
 | run_id | fk? → run | from `_meta["in.qabrain/runId"]` or a `run_id` argument |
-| transport | enum(`stdio`,`http`) | |
-| protocol_era | enum(`modern`,`legacy`) | `modern` = 2026-07-28 wire, `legacy` = 2025-11-25 handshake |
-| principal | text? | bearer subject in hosted mode, `local` on stdio |
+| transport | enum(`stdio`,`http`,`inmemory`) | `inmemory` is used by the unit tests' `InMemoryTransport` pairs |
+| protocol_era | enum(`legacy`,`modern`)? | `modern` = 2026-07-28 wire, `legacy` = 2025-11-25 handshake; `NULL` when the era is unknown (raw in-memory connects) |
+| principal | text | bearer subject in hosted mode, `local` on stdio |
 | upstream | text | `playwright`, later `appium`; `native` for `qa_*` |
 | tool | text | public name, e.g. `web_click` |
 | upstream_tool | text | e.g. `browser_click`; equals `tool` for natives |
@@ -288,15 +289,16 @@ Indexes: `artifact_run_kind_idx (run_id, kind)`.
 | args_redacted | json? | values with secrets masked; `NULL` when `log.argsMode` is `shape` or `none` |
 | args_hash | text | sha256 of canonical JSON of the raw arguments |
 | is_error | boolean | |
-| error_code | text? | `timeout`, `cancelled`, `upstream_unavailable`, `protocol_error`, `tool_error`, `blocked` |
+| error_code | enum(`unknown_tool`,`blocked_tool`,`invalid_args`,`timeout`,`cancelled`,`upstream_unavailable`,`upstream_error`,`not_implemented`,`internal`)? | the gateway error contract in the [tool catalog](./tool-catalog.md#10-error-contract) |
 | error_message | text? | ≤ 1 KiB |
 | result_chars | integer | serialized size before the `maxResultChars` cap |
 | result_kinds | text | comma-joined content types, e.g. `text,image` |
-| result_digest | text | sha256 of the content array |
+| result_digest | text? | sha256 of the content array |
 | traceparent | text? | W3C; see [observability](./observability.md) |
 | client_name | text? | from `_meta` client info or the legacy `initialize` |
+| created_at | ts | insert time |
 
-Indexes: `action_log_run_ts_idx (run_id, ts_start)`, `action_log_ts_idx (ts_start)`. Nullable `attempt_id`, `step_result_id`, and `handle_id` columns are added by an M2 migration when the runner starts correlating calls to steps; they are not in the M0 DDL.
+Indexes: `action_log_run_ts_idx (run_id, ts_start)`, `action_log_tool_ts_idx (tool, ts_start)`, `action_log_ts_idx (ts_start)`. Nullable `attempt_id`, `step_result_id`, and `handle_id` columns are added by an M2 migration when the runner starts correlating calls to steps; they are not in the M0 DDL.
 
 ### 3.6 Healing, flakiness, quarantine, impact
 
@@ -447,23 +449,21 @@ The cross-platform canonical key `role | canon(name)` maps to `content-desc` →
 
 ## 5. Migrations
 
-Schema source lives in `packages/store/src/schema/{enums,columns}.ts` (shared) and `packages/store/src/schema/{sqlite,pg}/*.ts` (one file per table group per dialect). Two [drizzle-kit](https://orm.drizzle.team/docs/kit-overview) 0.31.10 configs generate SQL:
+Schema source lives in `packages/store/src/schema/enums.ts` (shared tuples) and `packages/store/src/schema/{sqlite,pg}.ts` (all 17 tables per dialect). Two [drizzle-kit](https://orm.drizzle.team/docs/kit-overview) 0.31.10 configs generate SQL from the schema files alone (no database connection is needed to generate):
 
 ```ts
 // packages/store/drizzle.config.sqlite.ts
-export default { dialect: 'sqlite', schema: './src/schema/sqlite/index.ts', out: './migrations/sqlite',
-  dbCredentials: { url: process.env.QA_BRAIN_DB_URL ?? 'file:./.qa-brain/qa-brain.db' } };
+export default defineConfig({ dialect: 'sqlite', schema: './src/schema/sqlite.ts', out: './migrations/sqlite', strict: true, verbose: true });
 // packages/store/drizzle.config.pg.ts
-export default { dialect: 'postgresql', schema: './src/schema/pg/index.ts', out: './migrations/pg',
-  dbCredentials: { url: process.env.QA_BRAIN_DB_URL! } };
+export default defineConfig({ dialect: 'postgresql', schema: './src/schema/pg.ts', out: './migrations/pg', strict: true, verbose: true });
 ```
 
 | Mode | How migrations are applied | Driver |
 |---|---|---|
-| stdio (local) | `SqliteAdapter.migrate()` runs `migrate(db, { migrationsFolder })` from `drizzle-orm/libsql/migrator` at startup; a fresh `.qa-brain/qa-brain.db` is created on first `qa-brain serve`. `qa-brain doctor` reports pending migrations. | `@libsql/client` 0.17.4 (pure JS/WASM, no native build step — the reason `better-sqlite3` was not used) |
+| stdio (local) | `SqliteAdapter.migrate()` runs `migrate(db, { migrationsFolder })` from `drizzle-orm/libsql/migrator` at startup; a fresh `.qa-brain/qa-brain.db` is created on first `qa-brain serve`. `qa-brain doctor` reports pending migrations. | `@libsql/client` 0.17.4 (prebuilt N-API binaries for win32, darwin and linux, so `pnpm install` never compiles — the reason `better-sqlite3` was not used) |
 | HTTP (hosted) | Never on boot. `qa-brain db migrate` runs `drizzle-orm/node-postgres/migrator` as a one-shot Compose service; `qa-brain` and `worker` start only after it completes (`depends_on: condition: service_completed_successfully`, see [deployment](./deployment.md)) | `pg` 8.23.0 |
 
-Rules: migrations are committed SQL files (`migrations/<dialect>/0000_*.sql` plus `meta/_journal.json`), generated by `pnpm --filter @qa-brain/store drizzle:generate:<dialect>` and never hand-edited after merge; a schema change is one PR touching both dialect files and both migration folders. CI applies the SQLite migrations to a temp file on ubuntu and windows and, from M5, the PG migrations to a `postgres:18` service container. The conformance test `packages/store/test/schema-conformance.test.ts` walks both dialect exports with Drizzle's `getTableName`/`getTableColumns` and fails if any table or column exists in one dialect only, or if an enum tuple differs from `enums.ts`.
+Rules: migrations are committed SQL files (`migrations/<dialect>/0000_init.sql` plus `meta/`), generated by `pnpm --filter @qa-brain/store db:generate:<dialect>` (or `db:generate` for both) and never hand-edited after merge; a schema change is one PR touching both dialect files and both migration folders. CI applies the SQLite migrations to a temp file on ubuntu and windows and, from M5, the PG migrations to a `postgres:18` service container. The conformance test `packages/store/test/conformance.test.ts` walks both dialect exports with Drizzle's `getTableName`/`getTableColumns` and fails if any table or column exists in one dialect only, or if an enum tuple differs from `enums.ts`.
 
 ## 6. Retention and partitioning
 
@@ -486,6 +486,6 @@ All 17 tables ship in this PR with migrations for both dialects and the conforma
 |---|---|---|
 | `action_log` | `packages/gateway/src/log/action-log.ts` writes one row per `tools/call`; `qa_run_log` reads by `run_id` | smoke test asserts rows for `web_navigate`, `web_snapshot`, `web_click` with `upstream='playwright'`, `is_error=0`, `args_shape.url='string'` |
 | `run` | `qa_run_start` inserts (`trigger='manual'`, `status='running'`); `qa_run_finish` sets status/summary | unit + smoke |
-| `handle` | `HandleStore.mint('run', owner, 86400000)` for `rn_` handles; `resolve` on every `qa_run_*` call; sweeper | unit tests for TTL expiry and owner mismatch |
+| `handle` | the store's `handles.mint('run', owner, 86400000)` for `rn_` handles; `handles.resolve` on every `qa_run_*` call; the 5-minute sweeper in `packages/gateway/src/gateway.ts` | unit tests for TTL expiry and owner mismatch |
 
 `project` is seeded with slug `local` by the SQLite adapter so foreign keys hold; `api_key` stays empty in stdio mode. The remaining tables are created but untouched until M1 (`test_case*`), M2 (`step_fingerprint`, `run_attempt`, `step_result`, `artifact`), M3 (`heal_proposal`, `flaky_stat`), M4 (`coverage_map`), M5 (`api_key`, `task`), and M6 (`quarantine`) per the [roadmap](./roadmap.md). The PostgreSQL schema compiles and its migrations are generated in M0; CI runs them against a live database from M5.

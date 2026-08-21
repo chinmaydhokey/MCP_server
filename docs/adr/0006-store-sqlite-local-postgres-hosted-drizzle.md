@@ -4,7 +4,7 @@ QA Brain persists tests, runs, fingerprints, and the per-call `action_log` in a 
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 
@@ -16,7 +16,7 @@ PostgreSQL 18 provides a native RFC 9562 `uuidv7()` ([release notes](https://www
 
 ## Decision
 
-1. **ORM**: `drizzle-orm@0.45.2` with `drizzle-kit@0.31.10`. Two schema trees under `packages/store/src/schema/{sqlite,pg}/` share `enums.ts` and `columns.ts`. `StoreAdapter.driver` is `'sqlite' | 'pg'`, selected by `store.driver` / `store.url` in the config (default `file:./.qa-brain/qa-brain.db`).
+1. **ORM**: `drizzle-orm@0.45.2` with `drizzle-kit@0.31.10`. Two schema files, `packages/store/src/schema/sqlite.ts` and `packages/store/src/schema/pg.ts`, share the enum tuples in `packages/store/src/schema/enums.ts`. `StoreAdapter.driver` is `'sqlite' | 'pg'`, selected by `store.driver` / `store.url` in the config (default `file:./.qa-brain/qa-brain.db`).
 2. **SQLite driver**: `@libsql/client@0.17.4` via `drizzle-orm/libsql`. `better-sqlite3` is not a dependency anywhere in the workspace.
 3. **Postgres driver**: `pg@8.23.0` via `drizzle-orm/node-postgres`.
 4. **Ids**: every primary key is a UUIDv7 generated in the application with `uuidv7@1.2.1`, stored as `uuid` on Postgres and `text` on SQLite. `DEFAULT uuidv7()` on Postgres is only a safety net; the app always supplies the id, so both dialects behave identically. Handles are `<kind>_<uuidv7>` (ADR-0005).
@@ -32,7 +32,7 @@ PostgreSQL 18 provides a native RFC 9562 `uuidv7()` ([release notes](https://www
 
 **Negative.** Two schema trees are maintained by hand; the conformance test catches name drift but not semantic mismatches such as a CHECK present on one dialect only. JSON path queries exist only on PG; SQLite paths filter in TS. Monthly partitioning of `action_log` is PG-only and deferred to M5.
 
-**Neutral.** `@libsql/client` can also reach remote libsql servers; QA Brain uses only local `file:` URLs. Switching `store.driver` is a config change, not a data migration; no SQLite-to-Postgres copy tool exists in M0.
+**Neutral.** `@libsql/client` can also reach remote libsql servers; QA Brain uses only local `file:` URLs. Switching `store.driver` is a config change, not a data migration; no SQLite-to-Postgres copy tool exists in M0. The M0 implementation narrows the type mapping in point 5 in two documented places (see the header comments in `pg.ts` and `enums.ts`): enums are `text` columns typed with the shared tuples on both dialects rather than `pgEnum` (adding a member to a `pgEnum` needs `ALTER TYPE … ADD VALUE` and has no SQLite equivalent), and Postgres timestamps are `bigint` epoch milliseconds rather than `timestamptz`, so every row reads back with the same numeric shape on both dialects. Only the `quarantine` owner-and-issue rule is a CHECK constraint; other enum values are validated in the application.
 
 ## Alternatives considered
 

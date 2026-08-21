@@ -20,7 +20,10 @@ function sleep(ms: number): Promise<void> {
  * zombies. POSIX: SIGTERM → wait → SIGKILL (negative pid targets the process group when the child was spawned
  * detached). Windows has no SIGTERM: `taskkill /T /F` kills the tree.
  */
-export async function killTree(pid: number | null | undefined, opts: { graceMs?: number } = {}): Promise<void> {
+export async function killTree(
+  pid: number | null | undefined,
+  opts: { graceMs?: number } = {},
+): Promise<void> {
   if (!isAlive(pid)) return;
   const graceMs = opts.graceMs ?? 3000;
   if (process.platform === 'win32') {

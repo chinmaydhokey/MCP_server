@@ -4,7 +4,7 @@ QA Brain has no session concept of its own. Every piece of state that outlives o
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 
@@ -15,7 +15,7 @@ Prior art shows the cost of the opposite choice: Microsoft's mcp-gateway pins se
 ## Decision
 
 1. **Format.** `@qa-brain/core` `handle.ts` defines `HANDLE_KINDS = {run: 'rn', browser: 'bh', device: 'dh', snapshot: 'sn', lock: 'lk'}`, `mintHandle(kind)` returning `${prefix}_${uuidv7()}`, and `parseHandle()` against `^(rn|bh|dh|sn|lk)_<uuidv7>$`. UUIDv7 (`uuidv7@1.2.1`) is time-ordered and carries 74 random bits; the same generator runs on SQLite and Postgres.
-2. **Storage.** Table `handle`, identical columns on both dialects: `id` (the handle string, primary key), `project_id`, `kind`, `owner_api_key_id`, `upstream_ref` (Playwright context id or Appium `sessionId`), `platform` (`web|android|ios`), `state` JSON, `ttl_s`, `expires_at`, `last_used_at`, `revoked_at`, `created_at`; partial index on `expires_at` where `revoked_at IS NULL`; index on `owner_api_key_id`.
+2. **Storage.** Table `handle`, identical columns on both dialects: `handle` (the handle string, primary key), `kind`, `owner` (the principal that minted it: `local` on stdio, the `api_key.id` on HTTP), `project_id`, `platform` (`web|android|ios`), `upstream_ref` (Playwright context id or Appium `sessionId`), `state` JSON, `ttl_s`, `created_at`, `expires_at`, `last_used_at`, `revoked_at`; partial index `handle_expires_at_idx` on `expires_at` where `revoked_at IS NULL`; index `handle_owner_idx` on `owner`.
 3. **Ownership on every use.** `handles.resolve(handle, principal)` requires a row that exists, matches the principal (`local` on stdio; the verified bearer subject on HTTP, never a client-asserted value), is unrevoked, and is unexpired. Failures return typed `isError` results (`HANDLE_EXPIRED`, `HANDLE_NOT_FOUND`) with a recovery hint. A handle in a transcript, log, or LLM context is not a credential.
 4. **TTLs and sweeping.** `rn_` 24 h from `qa_run_start` (the only kind minted in M0); `bh_` and `dh_` 30 min idle; `sn_` 10 min; `lk_` per lock. A sweeper (5 min locally, 60 s hosted) revokes expired rows and releases the resource named by `upstream_ref`; use refreshes `last_used_at`.
 5. **Where state lives.** Upstream `Client` connections, browser and device pools, and the store are module-scope singletons keyed by handle, never per-request server fields. Playwright MCP is one long-lived child per upstream per worker, never per HTTP request; per-run isolation comes from browser contexts addressed by `bh_` handles (M4+), with `--isolated` in M0.

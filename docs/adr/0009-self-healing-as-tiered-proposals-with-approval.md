@@ -4,7 +4,7 @@ When a stored locator stops resolving, QA Brain relocates the element through fo
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 

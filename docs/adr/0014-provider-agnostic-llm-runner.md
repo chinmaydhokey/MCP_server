@@ -4,7 +4,7 @@ QA Brain's headless runner (the component that drives a model against the gatewa
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 

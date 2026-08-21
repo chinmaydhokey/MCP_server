@@ -2,6 +2,7 @@
   "name": "qa-brain-monorepo",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "description": "QA Brain \u00e2\u20ac\u201d an MCP gateway that turns LLM agents into persistent, self-healing, change-aware testers for web and mobile apps",
   "license": "Apache-2.0",
   "repository": {
@@ -13,7 +14,7 @@
     "node": ">=22.12"
   },
   "scripts": {
-    "build": "pnpm -r --filter './packages/*' --filter './apps/*' run build",
+    "build": "pnpm -r --if-present run build",
     "typecheck": "pnpm -r --if-present run typecheck",
     "lint": "biome ci .",
     "lint:fix": "biome check --write .",

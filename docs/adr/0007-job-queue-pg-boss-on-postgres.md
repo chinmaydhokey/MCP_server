@@ -4,7 +4,7 @@ Hosted QA Brain must run work that outlives a single MCP request: a suite run fa
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 

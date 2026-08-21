@@ -4,7 +4,7 @@ QA Brain selects end-to-end tests for a pull request as the union of five eviden
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 

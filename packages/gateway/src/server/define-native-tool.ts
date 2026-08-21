@@ -9,7 +9,12 @@ export interface GatewayServices {
   store: StoreAdapter;
   logger: Logger;
   /** Calls any registered tool through the router (used by qa_call_tool). */
-  call(input: { name: string; args: unknown; signal?: AbortSignal; ctx: NativeCallContext }): Promise<ToolCallResult>;
+  call(input: {
+    name: string;
+    args: unknown;
+    signal?: AbortSignal;
+    ctx: NativeCallContext;
+  }): Promise<ToolCallResult>;
   /** Registry read access (search/describe). */
   registry: {
     all(): RegisteredToolView[];
@@ -87,7 +92,8 @@ export function defineNativeTool<I extends z.ZodObject>(tool: NativeTool<I>): Na
 export function nativeDefinition(tool: NativeTool): ToolDefinition {
   const def: ToolDefinition = {
     name: tool.name,
-    description: tool.status === 'stub' ? `${tool.description} (stub: not implemented in M0)` : tool.description,
+    description:
+      tool.status === 'stub' ? `${tool.description} (stub: not implemented in M0)` : tool.description,
     inputSchema: toJsonSchema(tool.inputSchema),
   };
   if (tool.outputSchema) def.outputSchema = toJsonSchema(tool.outputSchema);

@@ -13,7 +13,13 @@ describe('config schema', () => {
   it('parses a stdio upstream with tool filters and defaults', () => {
     const c = parseConfig({
       mcpServers: {
-        playwright: { command: 'playwright', adapter: 'playwright', prefix: 'web_', strip: 'browser_', tools: { allow: ['browser_click'] } },
+        playwright: {
+          command: 'playwright',
+          adapter: 'playwright',
+          prefix: 'web_',
+          strip: 'browser_',
+          tools: { allow: ['browser_click'] },
+        },
       },
     });
     const up = c.mcpServers.playwright;

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { assertValidToolName, isValidToolName, toPublicToolName, toUpstreamToolName } from '../src/tool-name.js';
+import {
+  assertValidToolName,
+  isValidToolName,
+  toPublicToolName,
+  toUpstreamToolName,
+} from '../src/tool-name.js';
 
 describe('tool names', () => {
   const web = { prefix: 'web_', strip: 'browser_' };

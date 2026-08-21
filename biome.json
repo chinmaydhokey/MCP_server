@@ -2,14 +2,24 @@
   "$schema": "https://biomejs.dev/schemas/2.5.9/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "files": {
-    "includes": ["**", "!**/dist/**", "!**/node_modules/**", "!**/migrations/**", "!**/.qa-brain/**", "!**/*.md"]
+    "includes": ["**", "!**/dist", "!**/node_modules", "!**/migrations", "!**/.qa-brain", "!**/*.md"]
   },
-  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 110, "lineEnding": "lf" },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 110,
+    "lineEnding": "lf"
+  },
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
-      "suspicious": { "noExplicitAny": "warn", "noConsole": "off" },
+      "preset": "recommended",
+      "suspicious": {
+        "noExplicitAny": "warn",
+        "noConsole": "off",
+        "noTemplateCurlyInString": "off"
+      },
       "style": { "noNonNullAssertion": "warn", "useImportType": "error" },
       "complexity": { "noForEach": "off" }
     }

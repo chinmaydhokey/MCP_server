@@ -1,5 +1,5 @@
 import type { LogLevel, Redactor } from '@qa-brain/core';
-import { type Logger, destination, pino, stdTimeFunctions } from 'pino';
+import { destination, type Logger, pino, stdTimeFunctions } from 'pino';
 
 export type { Logger };
 
@@ -7,7 +7,12 @@ export type { Logger };
  * Creates the gateway logger. In stdio mode stdout is the MCP channel, so logs ALWAYS go to stderr (fd 2).
  * Every string written through the logger passes through the redactor.
  */
-export function createLogger(opts: { level: LogLevel; redactor: Redactor; name?: string; destination?: number }): Logger {
+export function createLogger(opts: {
+  level: LogLevel;
+  redactor: Redactor;
+  name?: string;
+  destination?: number;
+}): Logger {
   const { redactor } = opts;
   return pino(
     {

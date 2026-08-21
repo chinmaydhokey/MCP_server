@@ -23,7 +23,8 @@ const PREFIX_TO_KIND: Record<string, HandleKind> = Object.fromEntries(
   Object.entries(HANDLE_KINDS).map(([k, v]) => [v, k as HandleKind]),
 );
 
-const HANDLE_REGEX = /^(rn|bh|dh|sn|lk)_([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
+const HANDLE_REGEX =
+  /^(rn|bh|dh|sn|lk)_([0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/;
 
 /** Mints a new handle such as `rn_0198b2c4-…`. */
 export function mintHandle(kind: HandleKind): string {

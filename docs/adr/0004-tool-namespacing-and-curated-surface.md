@@ -4,7 +4,7 @@ QA Brain exposes proxied tools under short platform prefixes (`web_` for Playwri
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 

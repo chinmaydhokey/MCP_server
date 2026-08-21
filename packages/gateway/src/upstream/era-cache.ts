@@ -15,9 +15,23 @@ interface CacheFile {
   entries: Record<string, { verdict: EraVerdict; updatedAt: number }>;
 }
 
-export function launchSignature(input: { command: string; args: string[]; envKeys: string[]; adapter: string; url?: string }): string {
+export function launchSignature(input: {
+  command: string;
+  args: string[];
+  envKeys: string[];
+  adapter: string;
+  url?: string;
+}): string {
   const h = createHash('sha256');
-  h.update(JSON.stringify({ c: input.command, a: input.args, e: [...input.envKeys].sort(), ad: input.adapter, u: input.url ?? null }));
+  h.update(
+    JSON.stringify({
+      c: input.command,
+      a: input.args,
+      e: [...input.envKeys].sort(),
+      ad: input.adapter,
+      u: input.url ?? null,
+    }),
+  );
   return h.digest('hex').slice(0, 32);
 }
 

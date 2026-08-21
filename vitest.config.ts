@@ -4,7 +4,10 @@ import { defineConfig } from 'vitest/config';
 const alias = {
   '@qa-brain/core': path.resolve(import.meta.dirname, 'packages/core/src/index.ts'),
   '@qa-brain/store': path.resolve(import.meta.dirname, 'packages/store/src/index.ts'),
-  '@qa-brain/adapter-playwright': path.resolve(import.meta.dirname, 'packages/adapter-playwright/src/index.ts'),
+  '@qa-brain/adapter-playwright': path.resolve(
+    import.meta.dirname,
+    'packages/adapter-playwright/src/index.ts',
+  ),
   '@qa-brain/gateway': path.resolve(import.meta.dirname, 'packages/gateway/src/index.ts'),
   '@qa-brain/test-format': path.resolve(import.meta.dirname, 'packages/test-format/src/index.ts'),
   '@qa-brain/healing': path.resolve(import.meta.dirname, 'packages/healing/src/index.ts'),

@@ -4,7 +4,7 @@ QA Brain is one Node process that is an MCP server toward the LLM host and one M
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 

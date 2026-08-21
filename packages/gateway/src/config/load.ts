@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { type QaBrainConfig, type QaBrainConfigInput, parseConfig } from '@qa-brain/core';
+import { parseConfig, type QaBrainConfig, type QaBrainConfigInput } from '@qa-brain/core';
 import YAML from 'yaml';
 import { defaultConfig } from './defaults.js';
 import { expandEnv } from './expand-env.js';

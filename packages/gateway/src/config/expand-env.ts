@@ -10,7 +10,9 @@ export class MissingEnvError extends Error {
     readonly variable: string,
     readonly at: string,
   ) {
-    super(`Environment variable ${variable} is not set (referenced at ${at}); use \${${variable}:-default} to allow a default`);
+    super(
+      `Environment variable ${variable} is not set (referenced at ${at}); use \${${variable}:-default} to allow a default`,
+    );
     this.name = 'MissingEnvError';
   }
 }
@@ -23,7 +25,12 @@ export interface ExpandResult<T> {
   expanded: string[];
 }
 
-export function expandEnvInString(input: string, env: NodeJS.ProcessEnv, at: string, expanded: string[]): string {
+export function expandEnvInString(
+  input: string,
+  env: NodeJS.ProcessEnv,
+  at: string,
+  expanded: string[],
+): string {
   return input.replace(PATTERN, (_m, name: string, def: string | undefined) => {
     const v = env[name];
     if (v !== undefined && v !== '') {
@@ -42,7 +49,8 @@ export function expandEnv<T>(value: T, env: NodeJS.ProcessEnv = process.env): Ex
     if (Array.isArray(v)) return v.map((x, i) => walk(x, `${at}[${i}]`));
     if (v && typeof v === 'object') {
       const out: Record<string, unknown> = {};
-      for (const [k, x] of Object.entries(v as Record<string, unknown>)) out[k] = walk(x, at ? `${at}.${k}` : k);
+      for (const [k, x] of Object.entries(v as Record<string, unknown>))
+        out[k] = walk(x, at ? `${at}.${k}` : k);
       return out;
     }
     return v;

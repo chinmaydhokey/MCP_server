@@ -2,9 +2,7 @@
   "$schema": "https://json.schemastore.org/tsconfig",
   "compilerOptions": {
     "target": "ES2022",
-    "lib": [
-      "ES2023"
-    ],
+    "lib": ["ES2023"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
@@ -19,29 +17,15 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "baseUrl": ".",
     "paths": {
-      "@qa-brain/core": [
-        "packages/core/src/index.ts"
-      ],
-      "@qa-brain/store": [
-        "packages/store/src/index.ts"
-      ],
-      "@qa-brain/adapter-playwright": [
-        "packages/adapter-playwright/src/index.ts"
-      ],
-      "@qa-brain/gateway": [
-        "packages/gateway/src/index.ts"
-      ],
-      "@qa-brain/test-format": [
-        "packages/test-format/src/index.ts"
-      ],
-      "@qa-brain/healing": [
-        "packages/healing/src/index.ts"
-      ]
+      "@qa-brain/core": ["packages/core/src/index.ts"],
+      "@qa-brain/store": ["packages/store/src/index.ts"],
+      "@qa-brain/adapter-playwright": ["packages/adapter-playwright/src/index.ts"],
+      "@qa-brain/gateway": ["packages/gateway/src/index.ts"],
+      "@qa-brain/test-format": ["packages/test-format/src/index.ts"],
+      "@qa-brain/healing": ["packages/healing/src/index.ts"]
     }
   }
 }

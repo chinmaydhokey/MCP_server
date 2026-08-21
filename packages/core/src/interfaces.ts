@@ -124,7 +124,13 @@ export interface ActionLogRepository {
 }
 
 export interface RunRepository {
-  create(input: { id: string; name?: string | null; principal: string; meta?: unknown; trigger?: string }): Promise<Run>;
+  create(input: {
+    id: string;
+    name?: string | null;
+    principal: string;
+    meta?: unknown;
+    trigger?: string;
+  }): Promise<Run>;
   finish(id: string, patch: { status: RunStatus; summary?: unknown }): Promise<Run | null>;
   get(id: string): Promise<Run | null>;
 }
@@ -150,7 +156,17 @@ export interface StoreAdapter {
  * Artifacts (M2+). fs locally, S3-compatible hosted.
  * ---------------------------------------------------------------------------------------------- */
 
-export type ArtifactKind = 'screenshot' | 'crop' | 'snapshot' | 'trace' | 'video' | 'har' | 'console' | 'log' | 'diff' | 'result';
+export type ArtifactKind =
+  | 'screenshot'
+  | 'crop'
+  | 'snapshot'
+  | 'trace'
+  | 'video'
+  | 'har'
+  | 'console'
+  | 'log'
+  | 'diff'
+  | 'result';
 
 export interface ArtifactRef {
   id: string;
@@ -160,7 +176,12 @@ export interface ArtifactRef {
 }
 
 export interface ArtifactStore {
-  put(input: { runId?: string; kind: ArtifactKind; contentType: string; body: Uint8Array }): Promise<ArtifactRef>;
+  put(input: {
+    runId?: string;
+    kind: ArtifactKind;
+    contentType: string;
+    body: Uint8Array;
+  }): Promise<ArtifactRef>;
   get(id: string): Promise<{ contentType: string; body: Uint8Array } | null>;
   url(id: string, ttlMs?: number): Promise<string | null>;
   delete(id: string): Promise<void>;
@@ -194,7 +215,13 @@ export interface UpstreamAdapter {
   /** Which snapshot model the upstream offers. Mobile adapters synthesize `[ref=mN]` from page source. */
   readonly snapshotKind: 'aria-ref' | 'synthesized' | 'none';
   /** Resolves the launch command (e.g. the `playwright` alias → `node <cli.js> mcp …`). */
-  resolveLaunch(input: { command: string; args: string[]; env: Record<string, string>; cwd?: string; homeDir: string }): UpstreamLaunch;
+  resolveLaunch(input: {
+    command: string;
+    args: string[];
+    env: Record<string, string>;
+    cwd?: string;
+    homeDir: string;
+  }): UpstreamLaunch;
   /** Default tool table applied when the config does not specify one. */
   toolTable(): Record<string, ToolTableEntry>;
   /** Optional argument mapping hook (mobile: `ref=mN` → element UUID). */
@@ -236,7 +263,11 @@ export interface LlmDriver {
     maxTokens?: number;
     signal?: AbortSignal;
   }): Promise<AgentRunResult>;
-  complete(input: { prompt: string; schema?: JsonSchema; effort?: 'low' | 'medium' | 'high' }): Promise<unknown>;
+  complete(input: {
+    prompt: string;
+    schema?: JsonSchema;
+    effort?: 'low' | 'medium' | 'high';
+  }): Promise<unknown>;
   estimateCost(usage: TokenUsage): number;
 }
 

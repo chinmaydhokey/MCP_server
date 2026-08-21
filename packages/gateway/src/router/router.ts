@@ -2,9 +2,9 @@ import type { GatewayErrorCode, ToolCallResult } from '@qa-brain/core';
 import { isHandleOfKind } from '@qa-brain/core';
 import type { ActionLog } from '../log/action-log.js';
 import type { Logger } from '../log/logger.js';
-import { type TraceContext, outboundMeta } from '../otel.js';
+import { outboundMeta, type TraceContext } from '../otel.js';
 import type { ToolRegistry } from '../registry/tool-registry.js';
-import { type GatewayServices, type NativeCallContext, errorResult } from '../server/define-native-tool.js';
+import { errorResult, type GatewayServices, type NativeCallContext } from '../server/define-native-tool.js';
 import { UpstreamTimeoutError, UpstreamUnavailableError } from '../upstream/upstream-manager.js';
 
 export const RUN_ID_META_KEY = 'in.qabrain/runId';
@@ -90,37 +90,58 @@ export class Router {
       },
     });
 
-    const finish = async (result: ToolCallResult, code: GatewayErrorCode | null = null, message: string | null = null) => {
+    const finish = async (
+      result: ToolCallResult,
+      code: GatewayErrorCode | null = null,
+      message: string | null = null,
+    ) => {
       const capped = capResult(result, maxResultChars);
       const row = await pending.end({ result: capped, errorCode: code, errorMessage: message });
       return { ...capped, _meta: { ...(capped._meta ?? {}), [ACTION_LOG_ID_META_KEY]: row.id } };
     };
 
     if (!tool) {
-      return finish(errorResult('unknown_tool', `no tool named "${input.name}"; call qa_search_tools to discover tools`), 'unknown_tool', 'unknown tool');
+      return finish(
+        errorResult('unknown_tool', `no tool named "${input.name}"; call qa_search_tools to discover tools`),
+        'unknown_tool',
+        'unknown tool',
+      );
     }
     if (tool.status === 'blocked') {
       return finish(
-        errorResult('blocked_tool', `"${input.name}" is blocked by gateway policy (${tool.definition.description ?? 'policy'})`),
+        errorResult(
+          'blocked_tool',
+          `"${input.name}" is blocked by gateway policy (${tool.definition.description ?? 'policy'})`,
+        ),
         'blocked_tool',
         'blocked tool',
       );
     }
     if (!tool.callable) {
       return finish(
-        errorResult('blocked_tool', `"${input.name}" is not on the allow-list for upstream ${tool.upstreamId}; ask an operator to allow or hide it`),
+        errorResult(
+          'blocked_tool',
+          `"${input.name}" is not on the allow-list for upstream ${tool.upstreamId}; ask an operator to allow or hide it`,
+        ),
         'blocked_tool',
         'not allow-listed',
       );
     }
     if (ctx.depth > MAX_CALL_DEPTH) {
-      return finish(errorResult('invalid_args', 'qa_call_tool nesting too deep'), 'invalid_args', 'nesting too deep');
+      return finish(
+        errorResult('invalid_args', 'qa_call_tool nesting too deep'),
+        'invalid_args',
+        'nesting too deep',
+      );
     }
 
     if (tool.kind === 'native' && tool.native) {
       if (tool.status === 'stub') {
         return finish(
-          errorResult('not_implemented', `${input.name} is a design stub; it is scheduled for a later milestone (see docs/roadmap.md)`),
+          errorResult(
+            'not_implemented',
+            `${input.name} is a design stub; it is scheduled for a later milestone (see docs/roadmap.md)`,
+          ),
           'not_implemented',
           'stub',
         );
@@ -132,7 +153,11 @@ export class Router {
       }
       try {
         const result = await tool.native.handler(parsed.data, { ...ctx, signal: input.signal }, services);
-        return finish(result, result.isError ? 'internal' : null, result.isError ? 'native tool reported error' : null);
+        return finish(
+          result,
+          result.isError ? 'internal' : null,
+          result.isError ? 'native tool reported error' : null,
+        );
       } catch (err) {
         const message = (err as Error).message ?? String(err);
         this.opts.logger.error({ err, tool: input.name }, 'native tool threw');
@@ -142,23 +167,40 @@ export class Router {
 
     // proxied
     const manager = tool.manager;
-    if (!manager) return finish(errorResult('internal', 'tool has no upstream manager'), 'internal', 'no manager');
+    if (!manager)
+      return finish(errorResult('internal', 'tool has no upstream manager'), 'internal', 'no manager');
     try {
-      const result = await manager.callTool(tool.upstreamName, (input.args ?? {}) as Record<string, unknown>, {
-        signal: input.signal,
-        timeoutMs: callTimeoutMs,
-        meta: outboundMeta(trace),
-      });
-      return finish(result, result.isError ? 'upstream_error' : null, result.isError ? 'upstream reported error' : null);
+      const result = await manager.callTool(
+        tool.upstreamName,
+        (input.args ?? {}) as Record<string, unknown>,
+        {
+          signal: input.signal,
+          timeoutMs: callTimeoutMs,
+          meta: outboundMeta(trace),
+        },
+      );
+      return finish(
+        result,
+        result.isError ? 'upstream_error' : null,
+        result.isError ? 'upstream reported error' : null,
+      );
     } catch (err) {
       if (input.signal?.aborted) {
-        return finish(errorResult('cancelled', `${input.name} was cancelled by the client`), 'cancelled', 'cancelled');
+        return finish(
+          errorResult('cancelled', `${input.name} was cancelled by the client`),
+          'cancelled',
+          'cancelled',
+        );
       }
       if (err instanceof UpstreamTimeoutError) {
         return finish(errorResult('timeout', err.message), 'timeout', err.message);
       }
       if (err instanceof UpstreamUnavailableError) {
-        return finish(errorResult('upstream_unavailable', `${err.message}; call qa_health for details`), 'upstream_unavailable', err.message);
+        return finish(
+          errorResult('upstream_unavailable', `${err.message}; call qa_health for details`),
+          'upstream_unavailable',
+          err.message,
+        );
       }
       const message = (err as Error).message ?? String(err);
       return finish(errorResult('upstream_error', message), 'upstream_error', message);

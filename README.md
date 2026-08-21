@@ -13,8 +13,9 @@ what the raw automation servers lack:
 - **web ↔ mobile parity** from one test definition,
 - **flakiness detection and quarantine**, reporting, and GitHub integration.
 
-> Status: **M0 — blueprint and scaffold.** See the pull request that introduces the architecture, ADRs, and the
-> runnable gateway skeleton. The roadmap lives in `docs/roadmap.md` once merged.
+> Status: **M0 — blueprint and scaffold.** Start with [ARCHITECTURE.md](./ARCHITECTURE.md), the ADRs under
+> [docs/adr](./docs/adr/0001-gateway-on-mcp-sdk-v2-low-level-server.md), the [tool catalog](./docs/tool-catalog.md),
+> [client setup](./docs/client-setup.md) and the [roadmap](./docs/roadmap.md) (M0 September 2026 to M9 June 2027).
 
 ## License
 

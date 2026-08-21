@@ -4,7 +4,7 @@ Hosted QA Brain (Streamable HTTP, one self-hosted team) ships in M5 with bearer 
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 
@@ -18,7 +18,7 @@ Accepted, 2026-08-20.
 **Phase 1 (M5) — API keys.**
 
 - `qa-brain apikey create --project <slug>` prints `qab_<keyid>_<secret>` once and stores `api_key{id, project_id, name, prefix, key_hash, scopes, created_by, last_used_at, expires_at, revoked_at}`. `prefix` (first 8 chars, unique index) gives O(1) lookup before the hash check; `key_hash` is a PHC-formatted argon2id string (`m=65536,t=3,p=4`). Should the native `argon2` build prove as fragile as `better-sqlite3` did on Node 24/Windows, the PHC prefix lets `crypto.scrypt` (N=2^15, r=8, p=1) be verified side by side — a design decision.
-- The HTTP handler is wrapped in `requireBearerAuth` with a verifier: prefix → row → argon2 verify → `AuthInfo{token, clientId: api_key.id, scopes, expiresAt}`. Handle ownership (`handle.owner_api_key_id`) is checked per call; a handle is never authentication.
+- The HTTP handler is wrapped in `requireBearerAuth` with a verifier: prefix → row → argon2 verify → `AuthInfo{token, clientId: api_key.id, scopes, expiresAt}`. Handle ownership (`handle.owner`, which stores the `api_key.id`) is checked per call; a handle is never authentication.
 - Defaults as in Docker MCP Gateway v0.43.1 ([release](https://github.com/docker/mcp-gateway/releases/tag/v0.43.1)): bearer required; `--allow-unauthenticated` honored only on a loopback `http.host`; `/healthz` and `/readyz` public. M0 already ships this shape as a constant-time compare against `QA_BRAIN_TOKEN`.
 
 **Phase 2 (M7) — OAuth 2.1 resource server.**

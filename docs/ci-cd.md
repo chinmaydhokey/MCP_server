@@ -52,7 +52,7 @@ jobs:
         with: { node-version-file: .nvmrc, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint                          # biome ci .
-      - run: pnpm typecheck                     # tsc -b tsconfig.json
+      - run: pnpm typecheck                     # pnpm -r run typecheck (tsc --noEmit per package)
       - run: pnpm audit --prod --audit-level high
   unit:
     needs: lint-typecheck
@@ -197,13 +197,13 @@ pnpm install --frozen-lockfile
 pnpm exec playwright install chromium             # add --with-deps on a fresh Linux box
 pnpm build
 pnpm lint                                         # biome ci . (pnpm lint:fix to apply formatting)
-pnpm typecheck                                    # tsc -b tsconfig.json
+pnpm typecheck                                    # pnpm -r run typecheck (tsc --noEmit per package)
 pnpm test                                         # vitest run --project unit
 QA_BRAIN_E2E=1 pnpm smoke                         # PowerShell: $env:QA_BRAIN_E2E=1; pnpm smoke
 pnpm doctor                                       # node apps/qa-brain/dist/cli.js doctor
 ```
 
-`pnpm smoke` is a no-op unless `QA_BRAIN_E2E=1` is set, so a plain `pnpm test` never launches a browser. No git hooks are installed; CI is the enforcement point ([CONTRIBUTING.md](../CONTRIBUTING.md) describes optional `lefthook`).
+`pnpm smoke` is a no-op unless `QA_BRAIN_E2E=1` is set, so a plain `pnpm test` never launches a browser. No git hooks are installed; CI is the enforcement point ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 ## 9. Reusable Action: `qa-brain/run-action`
 

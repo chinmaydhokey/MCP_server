@@ -7,14 +7,25 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "files": ["dist"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --sourcemap --clean --target node22",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
-  "engines": { "node": ">=22.12" },
-  "dependencies": { "@qa-brain/core": "workspace:*" },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "dependencies": {
+    "@qa-brain/core": "workspace:*"
+  },
   "devDependencies": {}
 }

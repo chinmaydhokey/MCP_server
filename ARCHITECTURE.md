@@ -20,14 +20,14 @@ The defensible gap is the combination nobody ships as one open-source artifact: 
 ```mermaid
 flowchart LR
   dev["QA engineer / developer"]
-  host["LLM host<br/>Claude Code · Cursor · Codex · Claude Desktop<br/>or headless runner (M5)"]
+  host["LLM host<br/>Claude Code · Cursor · Codex · Claude Desktop<br/>or headless runner (M1 skeleton, M2 CI profile)"]
   qb["QA Brain gateway<br/>MCP server + MCP client"]
   pw["Playwright MCP 1.62.1<br/>(stdio child, legacy era)"]
   ap["appium-mcp ≥ 1.92<br/>(stdio child, M6)"]
   aut["Application under test<br/>web app · Android app"]
   store[("Store<br/>SQLite via @libsql/client (local)<br/>Postgres 18 (hosted)")]
   gh["GitHub<br/>PR diff · checks · issues (M4)"]
-  llm["LLM provider<br/>Anthropic · OpenAI · Ollama (M5 runner)"]
+  llm["LLM provider<br/>Anthropic · OpenAI · Ollama (runner, M1+)"]
   dev -- prompts --> host
   host -- "MCP tools/list · tools/call" --> qb
   qb -- "browser_* over stdio" --> pw
@@ -127,19 +127,19 @@ Redaction runs in `begin()` before anything is persisted or logged to stderr: ke
 | Path | Responsibility | Key facts |
 |---|---|---|
 | `src/config/{load,expand-env,defaults}.ts` | Read `qa-brain.config.json\|yaml`, expand `${VAR}` and `${VAR:-default}`, validate against the zod schema in `@qa-brain/core`, resolve relative paths against the config file | Unset variable without default is a validation error; expanded values join the redaction set; `block` wins over `allow`; empty `allow` means nothing is exposed |
-| `src/upstream/upstream-manager.ts` | One instance per `mcpServers.<id>`; owns a `Client` from `@modelcontextprotocol/client` with `versionNegotiation: {mode:'auto'}`; exposes `callTool`, `listTools`, `state` | Created once per process, shared by all server instances |
-| `src/upstream/child-supervisor.ts` | Spawn via `StdioClientTransport({command, args, env, cwd, stderr:'pipe'})`; pipe stderr to pino at `debug` (redacted); shutdown close-stdin → 2 s → `SIGTERM` → 3 s → `SIGKILL`; Windows `taskkill /PID <pid> /T /F`; idempotent `closeAll()` on `exit`/`SIGINT`/`SIGTERM` | `transport.pid` is available in SDK v2 (verified); Playwright 1.62.1 exits cleanly on `client.close()` on Windows |
+| `src/upstream/upstream-manager.ts` | One instance per `mcpServers.<id>`; owns a `Client` from `@modelcontextprotocol/client` with `versionNegotiation: {mode:'auto'}`; exposes `callTool`, `listTools`, `status()`; also hosts the child supervisor and the health probe described in the next two rows | Created once per process, shared by all server instances |
+| `src/upstream/upstream-manager.ts` (supervisor) + `src/upstream/kill-tree.ts` | Spawn via `StdioClientTransport({command, args, env, cwd, stderr:'pipe'})`; pipe stderr to pino at `debug` (redacted); shutdown close-stdin → 2 s → `SIGTERM` → 3 s → `SIGKILL`; Windows `taskkill /PID <pid> /T /F`; idempotent `closeAll()` on `exit`/`SIGINT`/`SIGTERM` | `transport.pid` is available in SDK v2 (verified); Playwright 1.62.1 exits cleanly on `client.close()` on Windows |
 | `src/upstream/era-cache.ts` | Persist `{kind:'modern', discover} \| {kind:'legacy'}` per upstream in `.qa-brain/era-cache.json`, keyed by sha256 of command, args, sorted env keys, adapter version; passed as `prior` to `client.connect` | Evicted on `EraNegotiationFailed` ([SDK gateway guide](https://ts.sdk.modelcontextprotocol.io/v2/advanced/gateway.html)) |
-| `src/upstream/health.ts` | Probe every 60 s with a 5 s timeout; 3 consecutive failures → `degraded` → restart with exponential backoff 1 s → 30 s, 5 attempts → `failed` | Modern upstreams are probed with `server/discover`, legacy ones with `ping()` |
+| `src/upstream/upstream-manager.ts` (`probe()`) | Probe every 60 s with a 5 s timeout; 3 consecutive failures → `degraded` → restart with exponential backoff 1 s → 30 s, 5 attempts → `failed` | Modern upstreams are probed with `server/discover`, legacy ones with `ping()` |
 | `src/registry/tool-registry.ts` | Build the public table at startup from every upstream's `listTools()` plus native definitions; public name = `prefix + name.replace(strip, '')`; validate `^[a-zA-Z0-9_-]{1,64}$` and ≤ 40 chars; collision → startup error | `tools/list` is sorted by name with `ttlMs: 300000`, `cacheScope: 'public'`; names are never removed at runtime (stale-history rule, [discussion #2036](https://github.com/modelcontextprotocol/modelcontextprotocol/discussions/2036)) |
 | `src/router/router.ts` | The single `tools/call` path for both eras: resolve, strip MRTR fields, log, dispatch native or proxied, pass through `content`/`structuredContent`/`isError`/`_meta`, cap size, map failures to `isError` | `timeout: server.callTimeoutMs` (60000), `resetTimeoutOnProgress: true`, `maxTotalTimeout: 5 × callTimeoutMs` |
 | `src/log/action-log.ts`, `src/log/logger.ts` | `begin()`/`end()` around every call; pino 10 JSON logger bound to stderr in stdio mode | Columns listed in §4; `argsMode` `shape` \| `redacted` \| `none` |
-| `src/handles/handle-store.ts` | Mint, resolve (with owner check), sweep handles in table `handle` | M0 mints only `rn_<uuidv7>` run handles with 24 h TTL; sweeper every 5 min |
+| `@qa-brain/store` `handles` repository (`mint`, `resolve`, `sweep`) + the sweeper timer in `src/gateway.ts` | Mint, resolve (with owner check), sweep handles in table `handle` | M0 mints only `rn_<uuidv7>` run handles with 24 h TTL; sweeper every 5 min |
 | `src/server/build-server.ts` | Factory returning a low-level `Server` from `@modelcontextprotocol/server` with `setRequestHandler('tools/list')` and `setRequestHandler('tools/call')` installed and `cacheHints` set | The low-level server is the documented path for proxies and dynamic registries ([SDK docs](https://ts.sdk.modelcontextprotocol.io/v2/advanced/low-level-server.html)) |
-| `src/server/define-native-tool.ts`, `src/server/native/{qa_health,qa_run,qa_discovery,qa_stubs}.ts` | Declare native tools with zod 4 input/output schemas; JSON Schema for `tools/list` is produced with `z.toJSONSchema`; stubs return `isError` "not implemented in M0" | All native schemas set `additionalProperties: false` with explicit `required` |
-| `src/transports/stdio.ts`, `http.ts`, `auth.ts`, `health-endpoints.ts` | `serveStdio(factory, {legacy:'serve'})` with `console.log` rebound to stderr; `createMcpHandler(factory, {legacy:'stateless'})` composed with `toNodeHandler`, `localhostHostValidation()`/`originValidation()`, `requireBearerAuth` against `QA_BRAIN_TOKEN` (constant-time), `GET /healthz`, `GET /readyz` | Binds `127.0.0.1:8787` by default; `--allow-unauthenticated` only on loopback |
+| `src/server/define-native-tool.ts`, `src/server/native/index.ts` (`qa_health`, `qa_run_*`, discovery tools, stubs) | Declare native tools with zod 4 input/output schemas; JSON Schema for `tools/list` is produced with `z.toJSONSchema`; stubs return `isError` "not implemented in M0" | All native schemas set `additionalProperties: false` with explicit `required` |
+| `src/transports/stdio.ts`, `src/transports/http.ts` | `serveStdio(factory, {legacy:'serve'})` with `console.log` rebound to stderr; `createMcpHandler(factory, {legacy:'stateless'})` composed with `toNodeHandler`, `localhostHostValidation()`/`originValidation()` (or the `http.allowedHosts`/`allowedOrigins` lists), a constant-time bearer check against the variable named by `http.bearerTokenEnv` (`QA_BRAIN_TOKEN`), `GET /healthz`, `GET /readyz` | Binds `127.0.0.1:8787` by default; `--allow-unauthenticated` only on loopback |
 | `src/otel.ts` | Hand-rolled spans following the [OTel GenAI MCP conventions](https://github.com/open-telemetry/semantic-conventions-genai/blob/main/docs/gen-ai/mcp.md); `QA_BRAIN_OTEL_EXPORTER=none` default | Inbound `_meta.traceparent` is propagated to every upstream call |
-| `src/index.ts` | `createGateway(config, deps) → { buildServer, start, close }` | Used by the CLI and by the smoke test through `InMemoryTransport.createLinkedPair()` |
+| `src/gateway.ts` (re-exported from `src/index.ts`) | `createGateway(options) → { buildServer, start, close, services }` | Used by the CLI and by the smoke test through `InMemoryTransport.createLinkedPair()` |
 
 The CLI in `apps/qa-brain` (commander 15) exposes `qa-brain serve --transport stdio|http [--config] [--port] [--host] [--allow-unauthenticated] [--log-level] [--dry-run]`, `qa-brain doctor`, and `qa-brain tools list [--all] [--json]`.
 
@@ -253,13 +253,13 @@ export interface HealStrategy {
 }
 
 export interface ImpactAnalyzer {
-  readonly layer: 'static-imports' | 'dynamic-coverage' | 'route-map' | 'network' | 'smoke-set';
+  readonly layer: 'static-imports' | 'dynamic-coverage' | 'route-map' | 'network-routes' | 'smoke-set';
   select(input: { diff: GitDiff; tests: TestRef[]; trackedFilesGlobs: string[] }):
     Promise<{ selected: TestRef[]; fallbackToRunAll: boolean; reasons: string[] }>;
 }
 ```
 
-Milestone ownership: `UpstreamAdapter` gets its second implementation in M6 (appium-mcp, [ADR-0015](./docs/adr/0015-mobile-via-appium-mcp-synthesized-refs-android-first.md)); `StoreAdapter` gains `tests` in M1 and `healProposals` in M3 ([ADR-0006](./docs/adr/0006-store-sqlite-local-postgres-hosted-drizzle.md)); `ArtifactStore` goes from `fs` to `s3` in M5 ([ADR-0008](./docs/adr/0008-artifacts-on-s3-compatible-storage.md)); `LlmDriver` arrives with the runner in M5 on the official `@anthropic-ai/sdk` and the `openai` SDK ([ADR-0014](./docs/adr/0014-provider-agnostic-llm-runner.md)); `HealStrategy` T0/T1 in M3 and T2/T3 in M6 ([ADR-0009](./docs/adr/0009-self-healing-as-tiered-proposals-with-approval.md)); `ImpactAnalyzer` layers in M4 ([ADR-0010](./docs/adr/0010-test-impact-analysis-layered-union.md)).
+Milestone ownership: `UpstreamAdapter` gets its second implementation in M6 (appium-mcp, [ADR-0015](./docs/adr/0015-mobile-via-appium-mcp-synthesized-refs-android-first.md)); `StoreAdapter` gains `tests` in M1 and `healProposals` in M3 ([ADR-0006](./docs/adr/0006-store-sqlite-local-postgres-hosted-drizzle.md)); `ArtifactStore` goes from `fs` to `s3` in M5 ([ADR-0008](./docs/adr/0008-artifacts-on-s3-compatible-storage.md)); `LlmDriver` gets its Anthropic implementation with the runner skeleton in M1 (official `@anthropic-ai/sdk`) and the OpenAI-compatible driver (`openai` SDK, covering OpenAI and Ollama) before the M7 benchmark harness ([ADR-0014](./docs/adr/0014-provider-agnostic-llm-runner.md)); `HealStrategy` T0/T1 in M3 and T2/T3 in M6 ([ADR-0009](./docs/adr/0009-self-healing-as-tiered-proposals-with-approval.md)); `ImpactAnalyzer` layers in M4 ([ADR-0010](./docs/adr/0010-test-impact-analysis-layered-union.md)).
 
 ## 10. Security posture in one paragraph
 
@@ -273,7 +273,7 @@ M0 is a blueprint plus a scaffold whose smoke test proves one path end to end: C
 - **Self-healing** (`qa_heal_locator`, proposals, approval): M3 (T0/T1), M6 (T2/T3). Only pure scoring functions may land in M0.
 - **Test impact analysis** (`qa_impact_select`) and GitHub App (PR diff, check runs, issues): M4.
 - **Hosted mode wiring**: the HTTP transport handler is implemented and unit-tested, but Postgres, pg-boss, SeaweedFS, Smokescreen, OTel exporters, and API keys are compose files and schema only until M5.
-- **LLM runner** and `LlmDriver` implementations: M5. In M0 the LLM is whatever host attaches over MCP.
+- **LLM runner** and `LlmDriver` implementations: runner skeleton with the Anthropic driver in M1, the zero-code `claude -p --bare` CI profile in M2, the OpenAI-compatible driver before M7. In M0 the LLM is whatever host attaches over MCP.
 - **Mobile** (`mobile_*`, appium-mcp adapter, synthesized `ref=mN`, parity report): M6; iOS stays documentation-only and macOS-bound.
 - **Artifacts**: the size cap truncates with a marker but stores nothing; `ArtifactStore` gets a real `fs` implementation in M2.
 - **Per-run browser isolation** (`bh_` handles, child pool): M4+. M0 runs one Playwright child per gateway process.

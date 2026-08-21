@@ -210,7 +210,7 @@ x-hardened: &hardened
 | `QA_BRAIN_DATABASE_URL` | `postgres://qa_brain@postgres:5432/qa_brain` (password from secret file) | `store.url` |
 | `QA_BRAIN_S3_ENDPOINT`, `QA_BRAIN_S3_BUCKET` | `http://seaweedfs:8333`, `qa-brain-artifacts` | `artifacts` driver `s3` (`forcePathStyle: true`) |
 | `QA_BRAIN_OTEL_EXPORTER`, `OTEL_EXPORTER_OTLP_ENDPOINT` | `otlp`, `http://otel-collector:4318` | gateway and worker tracing |
-| `QA_BRAIN_LLM_PROVIDER`, `QA_BRAIN_LLM_MODEL` | `anthropic`, `claude-opus-5` | runner (M2+) |
+| `QA_BRAIN_LLM_PROVIDER`, `QA_BRAIN_LLM_MODEL` | `anthropic`, `claude-opus-5` | runner (M1 skeleton; hosted worker from M5) |
 | `ANTHROPIC_API_KEY` | — | runner; redacted |
 | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY_FILE` | `/run/secrets/github_app_key` | GitHub integration (M4) |
 | `QA_BRAIN_TRACE_ARGS` | unset | `1` keeps `gen_ai.tool.call.arguments` on spans |

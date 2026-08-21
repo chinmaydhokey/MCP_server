@@ -1,13 +1,13 @@
 import {
+  assertValidToolName,
   type ToolDefinition,
   type ToolTableEntry,
+  toPublicToolName,
   type UpstreamAdapter,
   type UpstreamConfig,
-  assertValidToolName,
-  toPublicToolName,
 } from '@qa-brain/core';
 import type { Logger } from '../log/logger.js';
-import { type NativeTool, type RegisteredToolView, nativeDefinition } from '../server/define-native-tool.js';
+import { type NativeTool, nativeDefinition, type RegisteredToolView } from '../server/define-native-tool.js';
 import type { UpstreamManager } from '../upstream/upstream-manager.js';
 
 export interface RegisteredTool extends RegisteredToolView {
@@ -22,7 +22,9 @@ export class ToolCollisionError extends Error {
     readonly first: string,
     readonly second: string,
   ) {
-    super(`tool name collision: "${publicName}" is provided by both ${first} and ${second}; rename via prefix/strip or block one of them`);
+    super(
+      `tool name collision: "${publicName}" is provided by both ${first} and ${second}; rename via prefix/strip or block one of them`,
+    );
     this.name = 'ToolCollisionError';
   }
 }
@@ -35,7 +37,8 @@ export function effectiveToolTable(
   const table: Record<string, ToolTableEntry> = {};
   for (const [name, entry] of Object.entries(adapterTable)) table[name] = { ...entry };
   const override = (names: string[], patch: ToolTableEntry) => {
-    for (const n of names) table[n] = { ...(table[n] ?? {}), allow: false, hidden: false, block: false, ...patch };
+    for (const n of names)
+      table[n] = { ...(table[n] ?? {}), allow: false, hidden: false, block: false, ...patch };
   };
   override(config.allow, { allow: true });
   override(config.hidden, { hidden: true });
@@ -64,7 +67,12 @@ export function classify(entry: ToolTableEntry | undefined, passThrough: boolean
 export class ToolRegistry {
   private readonly tools = new Map<string, RegisteredTool>();
   constructor(
-    private readonly opts: { toolsListTtlMs: number; exposeStubs: boolean; maxListed: number; logger: Logger },
+    private readonly opts: {
+      toolsListTtlMs: number;
+      exposeStubs: boolean;
+      maxListed: number;
+      logger: Logger;
+    },
   ) {}
 
   registerNative(tool: NativeTool): void {
@@ -114,7 +122,10 @@ export class ToolRegistry {
     }
     for (const name of Object.keys(table)) {
       if (!manager.getTools().some((t) => t.name === name) && table[name]?.allow) {
-        this.opts.logger.warn({ upstream: manager.id, tool: name }, 'allow-listed tool not reported by upstream (version drift?)');
+        this.opts.logger.warn(
+          { upstream: manager.id, tool: name },
+          'allow-listed tool not reported by upstream (version drift?)',
+        );
       }
     }
   }
@@ -122,7 +133,17 @@ export class ToolRegistry {
   private add(tool: RegisteredTool): void {
     const existing = this.tools.get(tool.publicName);
     if (existing) {
-      throw new ToolCollisionError(tool.publicName, `${existing.upstreamId}:${existing.upstreamName}`, `${tool.upstreamId}:${tool.upstreamName}`);
+      // Re-registering the same upstream tool (after a restart) refreshes its definition; anything else is a
+      // genuine collision and must fail loudly — a shadowed tool silently changes what the model calls.
+      const sameSource =
+        existing.upstreamId === tool.upstreamId && existing.upstreamName === tool.upstreamName;
+      if (!sameSource) {
+        throw new ToolCollisionError(
+          tool.publicName,
+          `${existing.upstreamId}:${existing.upstreamName}`,
+          `${tool.upstreamId}:${tool.upstreamName}`,
+        );
+      }
     }
     this.tools.set(tool.publicName, tool);
   }
@@ -131,7 +152,9 @@ export class ToolRegistry {
   assertBudget(): void {
     const listed = this.list().length;
     if (listed > this.opts.maxListed) {
-      throw new Error(`tools/list would expose ${listed} tools; the budget is ${this.opts.maxListed} (hide tools or raise server.maxListedTools)`);
+      throw new Error(
+        `tools/list would expose ${listed} tools; the budget is ${this.opts.maxListed} (hide tools or raise server.maxListedTools)`,
+      );
     }
   }
 

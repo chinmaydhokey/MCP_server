@@ -13,9 +13,21 @@ import type { ToolTableEntry } from '@qa-brain/core';
  */
 export const PLAYWRIGHT_TOOL_TABLE: Record<string, ToolTableEntry> = {
   // ---- listed (15) ----
-  browser_navigate: { allow: true, description: 'Navigate the page to a URL. Returns the navigation status and a fresh accessibility snapshot.' },
-  browser_snapshot: { allow: true, description: 'Capture the accessibility snapshot of the current page. Interactive elements carry [ref=eN]; pass a ref as `target` to action tools. Prefer this over screenshots.' },
-  browser_find: { allow: true, description: 'Search the accessibility snapshot by text or regex and return matching nodes with refs (cheap re-grounding after a failed ref).' },
+  browser_navigate: {
+    allow: true,
+    description:
+      'Navigate the page to a URL. Returns the navigation status and a fresh accessibility snapshot.',
+  },
+  browser_snapshot: {
+    allow: true,
+    description:
+      'Capture the accessibility snapshot of the current page. Interactive elements carry [ref=eN]; pass a ref as `target` to action tools. Prefer this over screenshots.',
+  },
+  browser_find: {
+    allow: true,
+    description:
+      'Search the accessibility snapshot by text or regex and return matching nodes with refs (cheap re-grounding after a failed ref).',
+  },
   browser_click: { allow: true },
   browser_type: { allow: true },
   browser_fill_form: { allow: true },
@@ -23,7 +35,11 @@ export const PLAYWRIGHT_TOOL_TABLE: Record<string, ToolTableEntry> = {
   browser_press_key: { allow: true },
   browser_hover: { allow: true },
   browser_wait_for: { allow: true },
-  browser_take_screenshot: { allow: true, description: 'Take a screenshot of the page or an element. Screenshots are evidence only and cannot be used to pick targets — use web_snapshot for that.' },
+  browser_take_screenshot: {
+    allow: true,
+    description:
+      'Take a screenshot of the page or an element. Screenshots are evidence only and cannot be used to pick targets — use web_snapshot for that.',
+  },
   browser_console_messages: { allow: true },
   browser_handle_dialog: { allow: true },
   browser_verify_text_visible: { allow: true },
@@ -42,8 +58,14 @@ export const PLAYWRIGHT_TOOL_TABLE: Record<string, ToolTableEntry> = {
   browser_resize: { hidden: true },
   browser_close: { hidden: true },
   // ---- blocked (2 core + everything behind non-default caps) ----
-  browser_run_code_unsafe: { block: true, description: 'Blocked: executes arbitrary JavaScript in the Playwright server process (RCE-equivalent).' },
-  browser_evaluate: { block: true, description: 'Blocked: executes arbitrary JavaScript in the page; disabled by default policy.' },
+  browser_run_code_unsafe: {
+    block: true,
+    description: 'Blocked: executes arbitrary JavaScript in the Playwright server process (RCE-equivalent).',
+  },
+  browser_evaluate: {
+    block: true,
+    description: 'Blocked: executes arbitrary JavaScript in the page; disabled by default policy.',
+  },
   // vision caps
   browser_mouse_click_xy: { block: true },
   browser_mouse_down: { block: true },

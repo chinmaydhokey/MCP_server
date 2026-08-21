@@ -29,7 +29,12 @@ export function parseTraceparent(value: unknown): TraceContext | null {
   const traceId = m[1] as string;
   const spanId = m[2] as string;
   if (/^0+$/.test(traceId) || /^0+$/.test(spanId)) return null;
-  return { traceparent: value.trim(), traceId, spanId, sampled: (Number.parseInt(m[3] as string, 16) & 1) === 1 };
+  return {
+    traceparent: value.trim(),
+    traceId,
+    spanId,
+    sampled: (Number.parseInt(m[3] as string, 16) & 1) === 1,
+  };
 }
 
 export function newTraceContext(): TraceContext {

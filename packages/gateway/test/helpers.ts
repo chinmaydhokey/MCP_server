@@ -1,9 +1,9 @@
+import type { Transport } from '@modelcontextprotocol/client';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, Server } from '@modelcontextprotocol/server';
-import type { Transport } from '@modelcontextprotocol/client';
-import { type QaBrainConfigInput, TOOL_NAME_REGEX, createRedactor, parseConfig } from '@qa-brain/core';
+import { createRedactor, parseConfig, type QaBrainConfigInput, TOOL_NAME_REGEX } from '@qa-brain/core';
 import { createSqliteStore } from '@qa-brain/store';
-import { type Gateway, createGateway, createLogger } from '../src/index.js';
+import { createGateway, createLogger, type Gateway } from '../src/index.js';
 
 export interface FakeUpstream {
   calls: Array<{ name: string; args: unknown; meta: unknown }>;
@@ -12,7 +12,9 @@ export interface FakeUpstream {
 }
 
 /** A fake "Playwright MCP" with a handful of tools, served over InMemoryTransport. */
-export function fakeUpstream(opts: { tools?: string[]; onCall?: (name: string, args: Record<string, unknown>) => unknown } = {}): FakeUpstream {
+export function fakeUpstream(
+  opts: { tools?: string[]; onCall?: (name: string, args: Record<string, unknown>) => unknown } = {},
+): FakeUpstream {
   const tools = opts.tools ?? [
     'browser_click',
     'browser_snapshot',
@@ -28,12 +30,19 @@ export function fakeUpstream(opts: { tools?: string[]; onCall?: (name: string, a
     calls,
     servers,
     transportFactory: () => {
-      const server = new Server({ name: 'FakePlaywright', version: '1.62.1' }, { capabilities: { tools: {} } });
+      const server = new Server(
+        { name: 'FakePlaywright', version: '1.62.1' },
+        { capabilities: { tools: {} } },
+      );
       server.setRequestHandler('tools/list', async () => ({
         tools: tools.map((name) => ({
           name,
           description: `fake ${name}`,
-          inputSchema: { type: 'object', properties: { target: { type: 'string' }, password: { type: 'string' } }, additionalProperties: true },
+          inputSchema: {
+            type: 'object',
+            properties: { target: { type: 'string' }, password: { type: 'string' } },
+            additionalProperties: true,
+          },
         })),
       }));
       server.setRequestHandler('tools/call', async (req, ctx) => {
@@ -43,7 +52,9 @@ export function fakeUpstream(opts: { tools?: string[]; onCall?: (name: string, a
         if (custom instanceof Promise) {
           const out = await Promise.race([
             custom,
-            new Promise((_, reject) => ctx.mcpReq.signal.addEventListener('abort', () => reject(new Error('aborted')))),
+            new Promise((_, reject) =>
+              ctx.mcpReq.signal.addEventListener('abort', () => reject(new Error('aborted'))),
+            ),
           ]);
           return out as never;
         }
@@ -101,7 +112,10 @@ export async function connectClient(gateway: Gateway): Promise<Client> {
   const server = gateway.buildServer({ transport: 'inmemory', principal: 'local' });
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
-  const client = new Client({ name: 'test-client', version: '0.0.0' }, { versionNegotiation: { mode: 'auto' } });
+  const client = new Client(
+    { name: 'test-client', version: '0.0.0' },
+    { versionNegotiation: { mode: 'auto' } },
+  );
   await client.connect(clientSide);
   return client;
 }

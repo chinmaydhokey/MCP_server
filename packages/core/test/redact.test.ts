@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REDACTED, argsShape, createRedactor } from '../src/redact.js';
+import { argsShape, createRedactor, REDACTED } from '../src/redact.js';
 
 describe('redaction', () => {
   it('redacts sensitive keys regardless of value', () => {
@@ -12,7 +12,9 @@ describe('redaction', () => {
   });
   it('redacts known token formats inside free text', () => {
     const r = createRedactor();
-    const s = r.text('token github_pat_11AAAAAAA0abcdefghijklmnopqrstuvwxyz and ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ12 end');
+    const s = r.text(
+      'token github_pat_11AAAAAAA0abcdefghijklmnopqrstuvwxyz and ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ12 end',
+    );
     expect(s).not.toContain('github_pat_');
     expect(s).not.toContain('ghp_');
     expect(s.split(REDACTED).length - 1).toBe(2);

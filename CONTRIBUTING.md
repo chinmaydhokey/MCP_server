@@ -23,7 +23,7 @@ pnpm install --frozen-lockfile
 pnpm exec playwright install chromium
 pnpm build          # tsup, every package and the CLI
 pnpm lint           # biome ci .
-pnpm typecheck      # tsc -b tsconfig.json
+pnpm typecheck      # pnpm -r run typecheck (tsc --noEmit per package)
 pnpm test           # vitest, project "unit"
 QA_BRAIN_E2E=1 pnpm smoke   # vitest, project "e2e": real Playwright MCP child + SQLite
 node apps/qa-brain/dist/cli.js doctor
@@ -84,7 +84,9 @@ Decisions that are hard to reverse (protocol version, storage engine, tool namin
 
 ```
 # ADR-NNNN: Title
-Status: Proposed | Accepted (YYYY-MM-DD) | Superseded by ADR-MMMM
+<one-paragraph abstract>
+## Status
+Proposed | Accepted — YYYY-MM-DD | Superseded by ADR-MMMM
 ## Context
 ## Decision
 ## Consequences   (positive / negative / neutral)
@@ -92,7 +94,7 @@ Status: Proposed | Accepted (YYYY-MM-DD) | Superseded by ADR-MMMM
 ## References
 ```
 
-Open the ADR as its own pull request labeled `needs-adr`, get one approval from each maintainer, then merge with `Status: Accepted`. To change a decision, write a new ADR that supersedes the old one; never edit an accepted ADR's Decision section.
+Open the ADR as its own pull request labeled `needs-adr`, get one approval from each maintainer, then merge with the Status section reading `Accepted — <merge date>` (the M0 set reads `Accepted — 2026-08-20`). To change a decision, write a new ADR that supersedes the old one; never edit an accepted ADR's Decision section.
 
 ## Commits and pull requests
 

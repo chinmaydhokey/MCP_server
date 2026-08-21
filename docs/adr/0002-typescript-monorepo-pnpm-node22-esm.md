@@ -4,7 +4,7 @@ QA Brain is a TypeScript monorepo managed by pnpm workspaces, compiled as ES mod
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 
@@ -18,7 +18,7 @@ Three or four students deliver the project over nine to twelve months, developin
 | Runtime | Node 22 LTS minimum (`engines >=22.12`, `.nvmrc` 22); developed on Node 24 | pg-boss and appium-mcp floors; Node ≥20 refuses `.cmd` shims without `shell: true`, hence no `npx` |
 | Language | TypeScript 5.9.3 (not the 7.x native preview); `strict`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`, `isolatedModules` | Compiler the SDK is tested against |
 | Modules | `"type": "module"`, `module: NodeNext`, `.js` import suffixes | SDK subpaths (`@modelcontextprotocol/client/stdio`) resolve cleanly under NodeNext |
-| Build | tsup 8.5.1 per package; `tsc -b tsconfig.json` for typecheck | Bundled `bin` with shebang plus `.d.ts` from one config |
+| Build | tsup 8.5.1 per package; `pnpm typecheck` runs `tsc -p tsconfig.json --noEmit` in every package | Bundled `bin` with shebang plus `.d.ts` from one config |
 | Tests | Vitest 4.1.11; root `vitest.config.ts` with projects `unit` and `e2e` (`QA_BRAIN_E2E=1` gates smoke) | Native ESM/TS; `InMemoryTransport` gateway tests |
 | Lint/format | Biome 2.5.9, `biome ci .` | One binary, identical on all OSes |
 | Versioning | Changesets 3.0.1, fixed group `["qa-brain", "@qa-brain/*"]` | One version line; publishing disabled in M0 |

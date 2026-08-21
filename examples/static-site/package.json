@@ -6,5 +6,7 @@
   "license": "Apache-2.0",
   "type": "module",
   "main": "./serve.js",
-  "scripts": { "start": "node serve.js" }
+  "scripts": {
+    "start": "node serve.js"
+  }
 }

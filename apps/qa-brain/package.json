@@ -11,7 +11,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/cli.ts --format esm --sourcemap --clean --target node22 --banner.js \"#!/usr/bin/env node\"",
+    "build": "tsup",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },

@@ -4,7 +4,7 @@ Mobile enters QA Brain through the same `UpstreamAdapter` contract as Playwright
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 

@@ -4,7 +4,7 @@ Every proxied or native tool call is a span named and attributed per the OpenTel
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 

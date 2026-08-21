@@ -1,7 +1,18 @@
 import { timingSafeEqual } from 'node:crypto';
-import { type IncomingMessage, type Server as NodeServer, type ServerResponse, createServer } from 'node:http';
+import {
+  createServer,
+  type IncomingMessage,
+  type Server as NodeServer,
+  type ServerResponse,
+} from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { hostHeaderValidation, localhostHostValidation, localhostOriginValidation, originValidation, toNodeHandler } from '@modelcontextprotocol/node';
+import {
+  hostHeaderValidation,
+  localhostHostValidation,
+  localhostOriginValidation,
+  originValidation,
+  toNodeHandler,
+} from '@modelcontextprotocol/node';
 import { type AuthInfo, createMcpHandler } from '@modelcontextprotocol/server';
 import type { Gateway } from '../gateway.js';
 
@@ -53,28 +64,39 @@ export async function serveGatewayHttp(gateway: Gateway, opts: HttpServeOptions 
     );
   }
   if (!token && allowUnauthenticated && !isLoopback(host)) {
-    throw new HttpAuthConfigError('--allow-unauthenticated is only permitted when binding to 127.0.0.1/localhost');
+    throw new HttpAuthConfigError(
+      '--allow-unauthenticated is only permitted when binding to 127.0.0.1/localhost',
+    );
   }
 
   const mcp = createMcpHandler(
-    (ctx) => gateway.buildServer({ transport: 'http', principal: ctx.authInfo?.clientId ?? 'anonymous', era: ctx.era }),
+    (ctx) =>
+      gateway.buildServer({
+        transport: 'http',
+        principal: ctx.authInfo?.clientId ?? 'anonymous',
+        era: ctx.era,
+      }),
     { legacy: 'stateless', onerror: (err) => gateway.logger.error({ err }, 'http mcp handler error') },
   );
 
-  const hostCheck = cfg.allowedHosts.length > 0 ? hostHeaderValidation(cfg.allowedHosts) : localhostHostValidation();
-  const originCheck = cfg.allowedOrigins.length > 0 ? originValidation(cfg.allowedOrigins) : localhostOriginValidation();
+  const hostCheck =
+    cfg.allowedHosts.length > 0 ? hostHeaderValidation(cfg.allowedHosts) : localhostHostValidation();
+  const originCheck =
+    cfg.allowedOrigins.length > 0 ? originValidation(cfg.allowedOrigins) : localhostOriginValidation();
 
   const authenticate = (req: IncomingMessage): AuthInfo | null => {
     if (!token) return { token: '', clientId: 'anonymous', scopes: ['local'] };
     const header = req.headers.authorization;
-    if (!header || !header.startsWith('Bearer ')) return null;
+    if (!header?.startsWith('Bearer ')) return null;
     const presented = header.slice('Bearer '.length).trim();
     if (!constantTimeEqual(presented, token)) return null;
     return { token: presented, clientId: 'bearer', scopes: ['gateway'] };
   };
 
   // toNodeHandler reads `req.auth` (Express convention) and forwards it as `authInfo` to the MCP handler.
-  const nodeHandler = toNodeHandler(mcp, { onerror: (err) => gateway.logger.error({ err }, 'http transport error') });
+  const nodeHandler = toNodeHandler(mcp, {
+    onerror: (err) => gateway.logger.error({ err }, 'http transport error'),
+  });
 
   const server: NodeServer = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
@@ -83,7 +105,11 @@ export async function serveGatewayHttp(gateway: Gateway, opts: HttpServeOptions 
       const storeOk = await gateway.store.ping().catch(() => false);
       const upstreams = gateway.status();
       const ready = storeOk && upstreams.every((u) => u.state === 'healthy' || u.state === 'degraded');
-      return json(res, ready ? 200 : 503, { ok: ready, store: storeOk, upstreams: upstreams.map((u) => ({ id: u.id, state: u.state })) });
+      return json(res, ready ? 200 : 503, {
+        ok: ready,
+        store: storeOk,
+        upstreams: upstreams.map((u) => ({ id: u.id, state: u.state })),
+      });
     }
     if (url.pathname !== '/mcp') return json(res, 404, { error: 'not_found' });
     if (!hostCheck(req, res) || !originCheck(req, res)) return; // helpers already wrote 403

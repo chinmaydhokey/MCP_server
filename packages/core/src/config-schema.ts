@@ -7,6 +7,20 @@ import { z } from 'zod';
  * and registers every expanded value with the redactor.
  */
 
+/**
+ * Config values may arrive as strings after `${VAR}` expansion (environments have no types), so numeric and
+ * boolean fields accept both. `z.coerce.boolean()` is deliberately NOT used: it turns the string "false"
+ * into `true`, which would silently disable safety flags such as `allowUnauthenticated`.
+ */
+const envNumber = () => z.coerce.number();
+const envBoolean = () =>
+  z.union([
+    z.boolean(),
+    z
+      .enum(['true', 'false', '1', '0', 'yes', 'no'])
+      .transform((v) => v === 'true' || v === '1' || v === 'yes'),
+  ]);
+
 export const LogLevelSchema = z.enum(['trace', 'debug', 'info', 'warn', 'error', 'silent']);
 export type LogLevel = z.infer<typeof LogLevelSchema>;
 
@@ -17,13 +31,13 @@ export const ServerConfigSchema = z.object({
   /** Name reported in MCP server info. */
   name: z.string().min(1).default('qa-brain'),
   /** `ttlMs` advertised on tools/list (2026-07-28 CacheableResult). */
-  toolsListTtlMs: z.number().int().nonnegative().default(300_000),
+  toolsListTtlMs: envNumber().int().nonnegative().default(300_000),
   /** Per-call timeout for proxied tool calls. */
-  callTimeoutMs: z.number().int().positive().default(60_000),
+  callTimeoutMs: envNumber().int().positive().default(60_000),
   /** Hard cap on serialized text content returned to the LLM (≈ 20k tokens). */
-  maxResultChars: z.number().int().positive().default(80_000),
+  maxResultChars: envNumber().int().positive().default(80_000),
   /** List stub tools (return isError "not implemented") in tools/list. */
-  exposeStubs: z.boolean().default(false),
+  exposeStubs: envBoolean().default(false),
   /** Optional `instructions` string sent to the client. */
   instructions: z.string().optional(),
 });
@@ -38,7 +52,7 @@ export const StoreConfigSchema = z.discriminatedUnion('driver', [
     driver: z.literal('pg'),
     /** Postgres connection string. */
     url: z.string().min(1),
-    poolMax: z.number().int().positive().default(10),
+    poolMax: envNumber().int().positive().default(10),
   }),
 ]);
 
@@ -50,7 +64,7 @@ export const ArtifactsConfigSchema = z.discriminatedUnion('driver', [
     endpoint: z.string().url().optional(),
     region: z.string().default('us-east-1'),
     prefix: z.string().default(''),
-    forcePathStyle: z.boolean().default(true),
+    forcePathStyle: envBoolean().default(true),
   }),
 ]);
 
@@ -62,11 +76,11 @@ export const LogConfigSchema = z.object({
 
 export const HttpConfigSchema = z.object({
   host: z.string().default('127.0.0.1'),
-  port: z.number().int().min(0).max(65535).default(8787),
+  port: envNumber().int().min(0).max(65535).default(8787),
   /** Name of the environment variable holding the bearer token accepted on /mcp. */
   bearerTokenEnv: z.string().default('QA_BRAIN_TOKEN'),
   /** Only honoured when binding to a loopback address. */
-  allowUnauthenticated: z.boolean().default(false),
+  allowUnauthenticated: envBoolean().default(false),
   /** Host header allow-list (DNS-rebinding protection). Empty = localhost defaults. */
   allowedHosts: z.array(z.string()).default([]),
   /** Origin header allow-list. Empty = localhost defaults. */
@@ -83,15 +97,15 @@ export const ToolFilterSchema = z.object({
 });
 
 export const HealthConfigSchema = z.object({
-  intervalMs: z.number().int().positive().default(60_000),
-  timeoutMs: z.number().int().positive().default(5_000),
-  unhealthyThreshold: z.number().int().positive().default(3),
+  intervalMs: envNumber().int().positive().default(60_000),
+  timeoutMs: envNumber().int().positive().default(5_000),
+  unhealthyThreshold: envNumber().int().positive().default(3),
 });
 
 export const RestartConfigSchema = z.object({
-  maxAttempts: z.number().int().nonnegative().default(5),
-  baseMs: z.number().int().positive().default(1_000),
-  maxMs: z.number().int().positive().default(30_000),
+  maxAttempts: envNumber().int().nonnegative().default(5),
+  baseMs: envNumber().int().positive().default(1_000),
+  maxMs: envNumber().int().positive().default(30_000),
 });
 
 const UpstreamBaseSchema = z.object({
@@ -108,7 +122,7 @@ const UpstreamBaseSchema = z.object({
   health: HealthConfigSchema.prefault({}),
   restart: RestartConfigSchema.prefault({}),
   /** Long-lived upstreams hold state (a browser); they are never spawned per request. */
-  longLived: z.boolean().default(true),
+  longLived: envBoolean().default(true),
   /** Upstream-specific settings passed to the adapter (e.g. Playwright flags). */
   settings: z.record(z.string(), z.unknown()).default({}),
 });
@@ -143,7 +157,10 @@ export const QaBrainConfigSchema = z.object({
   log: LogConfigSchema.prefault({}),
   http: HttpConfigSchema.prefault({}),
   mcpServers: z
-    .record(z.string().regex(/^[a-z][a-z0-9-]*$/, 'upstream ids are lowercase kebab-case'), UpstreamConfigSchema)
+    .record(
+      z.string().regex(/^[a-z][a-z0-9-]*$/, 'upstream ids are lowercase kebab-case'),
+      UpstreamConfigSchema,
+    )
     .default({}),
 });
 

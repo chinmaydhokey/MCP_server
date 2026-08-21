@@ -4,7 +4,7 @@ Screenshots, element crops, accessibility snapshots, Playwright `trace.zip` file
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 

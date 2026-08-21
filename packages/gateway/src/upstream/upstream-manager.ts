@@ -1,7 +1,7 @@
-import { Client } from '@modelcontextprotocol/client';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
-import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/client/stdio';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import {
+  isStdioUpstream,
   type ProtocolEra,
   type Redactor,
   type ToolCallResult,
@@ -9,7 +9,6 @@ import {
   type UpstreamAdapter,
   type UpstreamConfig,
   VERSION,
-  isStdioUpstream,
 } from '@qa-brain/core';
 import type { Logger } from '../log/logger.js';
 import { type EraCache, type EraVerdict, launchSignature } from './era-cache.js';
@@ -56,7 +55,9 @@ export class UpstreamTimeoutError extends Error {
     readonly tool: string,
     readonly timeoutMs: number,
   ) {
-    super(`upstream '${upstreamId}' tool ${tool} timed out after ${timeoutMs} ms; the browser may still be busy — take a fresh snapshot before retrying`);
+    super(
+      `upstream '${upstreamId}' tool ${tool} timed out after ${timeoutMs} ms; the browser may still be busy — take a fresh snapshot before retrying`,
+    );
     this.name = 'UpstreamTimeoutError';
   }
 }
@@ -71,6 +72,8 @@ export interface UpstreamManagerOptions {
   eraCache: EraCache;
   /** Injected for tests: build a transport instead of spawning. */
   transportFactory?: () => import('@modelcontextprotocol/client').Transport;
+  /** Called after every successful (re)connect, once the tool list has been fetched. */
+  onReady?: (manager: UpstreamManager) => void;
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -91,8 +94,11 @@ export class UpstreamManager {
   readonly id: string;
   private state: UpstreamState = 'stopped';
   private client: Client | null = null;
-  private transport: StdioClientTransport | StreamableHTTPClientTransport | import('@modelcontextprotocol/client').Transport | null =
-    null;
+  private transport:
+    | StdioClientTransport
+    | StreamableHTTPClientTransport
+    | import('@modelcontextprotocol/client').Transport
+    | null = null;
   private tools: ToolDefinition[] = [];
   private restarts = 0;
   private consecutiveFailures = 0;
@@ -187,7 +193,10 @@ export class UpstreamManager {
       await this.connectOnce(cached);
     } catch (err) {
       if (cached) {
-        this.opts.logger.warn({ upstream: this.id, err }, 'connect with cached era verdict failed; evicting and retrying with auto negotiation');
+        this.opts.logger.warn(
+          { upstream: this.id, err },
+          'connect with cached era verdict failed; evicting and retrying with auto negotiation',
+        );
         this.opts.eraCache.evict(this.signature);
         await this.connectOnce(undefined);
         return;
@@ -216,7 +225,9 @@ export class UpstreamManager {
     try {
       await client.connect(
         transport,
-        verdict?.kind === 'modern' ? { prior: { kind: 'modern', discover: verdict.discover as never } } : undefined,
+        verdict?.kind === 'modern'
+          ? { prior: { kind: 'modern', discover: verdict.discover as never } }
+          : undefined,
       );
       this.client = client;
       this.transport = transport;
@@ -235,9 +246,16 @@ export class UpstreamManager {
       this.nextRestartAt = null;
       this.startHealthTimer();
       this.opts.logger.info(
-        { upstream: this.id, era, version: client.getNegotiatedProtocolVersion(), server: client.getServerVersion(), tools: this.tools.length },
+        {
+          upstream: this.id,
+          era,
+          version: client.getNegotiatedProtocolVersion(),
+          server: client.getServerVersion(),
+          tools: this.tools.length,
+        },
         'upstream connected',
       );
+      this.opts.onReady?.(this);
     } catch (err) {
       this.lastError = (err as Error).message;
       this.state = 'degraded';
@@ -278,7 +296,10 @@ export class UpstreamManager {
     } catch (err) {
       this.consecutiveFailures += 1;
       this.lastError = (err as Error).message;
-      this.opts.logger.warn({ upstream: this.id, failures: this.consecutiveFailures, err }, 'health probe failed');
+      this.opts.logger.warn(
+        { upstream: this.id, failures: this.consecutiveFailures, err },
+        'health probe failed',
+      );
       if (this.consecutiveFailures >= unhealthyThreshold) this.onUnexpectedExit('health probes failed');
       else this.state = 'degraded';
       return false;
@@ -301,12 +322,18 @@ export class UpstreamManager {
     if (this.restarts >= maxAttempts) {
       this.state = 'failed';
       this.nextRestartAt = null;
-      this.opts.logger.error({ upstream: this.id, reason, restarts: this.restarts }, 'upstream failed permanently (restart attempts exhausted)');
+      this.opts.logger.error(
+        { upstream: this.id, reason, restarts: this.restarts },
+        'upstream failed permanently (restart attempts exhausted)',
+      );
       return;
     }
     const delay = Math.min(maxMs, baseMs * 2 ** this.restarts);
     this.nextRestartAt = Date.now() + delay;
-    this.opts.logger.warn({ upstream: this.id, reason, delayMs: delay, attempt: this.restarts + 1, maxAttempts }, 'scheduling upstream restart');
+    this.opts.logger.warn(
+      { upstream: this.id, reason, delayMs: delay, attempt: this.restarts + 1, maxAttempts },
+      'scheduling upstream restart',
+    );
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
       this.restarts += 1;
@@ -332,10 +359,17 @@ export class UpstreamManager {
       throw new UpstreamUnavailableError(this.id, this.status());
     }
     try {
-      const mapped = this.opts.adapter.mapArgs ? (this.opts.adapter.mapArgs(name, args) as Record<string, unknown>) : args;
+      const mapped = this.opts.adapter.mapArgs
+        ? (this.opts.adapter.mapArgs(name, args) as Record<string, unknown>)
+        : args;
       const result = (await this.client.callTool(
         { name, arguments: mapped ?? {}, _meta: opts.meta as never },
-        { signal: opts.signal, timeout: opts.timeoutMs, resetTimeoutOnProgress: true, maxTotalTimeout: opts.timeoutMs * 5 },
+        {
+          signal: opts.signal,
+          timeout: opts.timeoutMs,
+          resetTimeoutOnProgress: true,
+          maxTotalTimeout: opts.timeoutMs * 5,
+        },
       )) as unknown as ToolCallResult;
       return this.opts.adapter.mapResult ? this.opts.adapter.mapResult(name, result) : result;
     } catch (err) {

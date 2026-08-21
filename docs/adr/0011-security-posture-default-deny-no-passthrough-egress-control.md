@@ -4,7 +4,7 @@ QA Brain sits between an LLM and browser/device automation servers, so every pag
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 

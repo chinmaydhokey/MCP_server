@@ -1,5 +1,9 @@
+import {
+  PLAYWRIGHT_BLOCKED_TOOLS,
+  PLAYWRIGHT_HIDDEN_TOOLS,
+  PLAYWRIGHT_LISTED_TOOLS,
+} from '@qa-brain/adapter-playwright';
 import type { QaBrainConfigInput } from '@qa-brain/core';
-import { PLAYWRIGHT_BLOCKED_TOOLS, PLAYWRIGHT_HIDDEN_TOOLS, PLAYWRIGHT_LISTED_TOOLS } from '@qa-brain/adapter-playwright';
 
 /**
  * Configuration used when no config file is present: one Playwright MCP upstream with the curated table,

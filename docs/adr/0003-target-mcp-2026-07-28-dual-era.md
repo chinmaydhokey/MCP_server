@@ -4,7 +4,7 @@ QA Brain serves the stateless 2026-07-28 revision to LLM hosts while still accep
 
 ## Status
 
-Accepted, 2026-08-20.
+Accepted — 2026-08-20
 
 ## Context
 

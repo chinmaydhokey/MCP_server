@@ -1,8 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Client } from '@modelcontextprotocol/client';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Gateway } from '../src/index.js';
 import { ACTION_LOG_ID_META_KEY } from '../src/index.js';
-import { type FakeUpstream, TOOL_NAME_REGEX, connectClient, fakeUpstream, testGateway, text } from './helpers.js';
+import {
+  connectClient,
+  type FakeUpstream,
+  fakeUpstream,
+  TOOL_NAME_REGEX,
+  testGateway,
+  text,
+} from './helpers.js';
 
 describe('gateway end-to-end (in-memory upstream)', () => {
   let upstream: FakeUpstream;
@@ -80,30 +87,51 @@ describe('gateway end-to-end (in-memory upstream)', () => {
     const started = await client.callTool({ name: 'qa_run_start', arguments: { name: 'smoke' } });
     const runId = (started.structuredContent as { run_id: string }).run_id;
     expect(runId).toMatch(/^rn_/);
-    await client.callTool({ name: 'web_navigate', arguments: { url: 'https://example.test', run_id: runId } });
-    await client.callTool({ name: 'web_click', arguments: { target: 'e1' }, _meta: { 'in.qabrain/runId': runId } as never });
+    await client.callTool({
+      name: 'web_navigate',
+      arguments: { url: 'https://example.test', run_id: runId },
+    });
+    await client.callTool({
+      name: 'web_click',
+      arguments: { target: 'e1' },
+      _meta: { 'in.qabrain/runId': runId } as never,
+    });
     const log = await client.callTool({ name: 'qa_run_log', arguments: { run_id: runId } });
     const actions = (log.structuredContent as { actions: Array<{ tool: string }> }).actions;
     expect(actions.map((a) => a.tool)).toEqual(['web_click', 'web_navigate']);
-    const finished = await client.callTool({ name: 'qa_run_finish', arguments: { run_id: runId, status: 'passed' } });
+    const finished = await client.callTool({
+      name: 'qa_run_finish',
+      arguments: { run_id: runId, status: 'passed' },
+    });
     const summary = finished.structuredContent as { actions: number; errors: number; status: string };
     expect(summary.status).toBe('passed');
     expect(summary.actions).toBe(3); // navigate + click + qa_run_log (finish is logged after counting)
     expect(summary.errors).toBe(0);
-    const again = await client.callTool({ name: 'qa_run_finish', arguments: { run_id: runId, status: 'passed' } });
+    const again = await client.callTool({
+      name: 'qa_run_finish',
+      arguments: { run_id: runId, status: 'passed' },
+    });
     expect(again.isError).toBe(true); // handle revoked
   });
 
   it('discovers hidden tools and calls them through qa_call_tool, still refusing blocked ones', async () => {
     const search = await client.callTool({ name: 'qa_search_tools', arguments: { query: 'tabs' } });
-    const found = (search.structuredContent as { tools: Array<{ name: string; listed: boolean; callable: boolean }> }).tools;
+    const found = (
+      search.structuredContent as { tools: Array<{ name: string; listed: boolean; callable: boolean }> }
+    ).tools;
     expect(found.some((t) => t.name === 'web_tabs' && !t.listed && t.callable)).toBe(true);
     const describe = await client.callTool({ name: 'qa_describe_tool', arguments: { name: 'web_tabs' } });
     expect((describe.structuredContent as { inputSchema: unknown }).inputSchema).toBeTruthy();
-    const viaCall = await client.callTool({ name: 'qa_call_tool', arguments: { name: 'web_tabs', arguments: { action: 'list' } } });
+    const viaCall = await client.callTool({
+      name: 'qa_call_tool',
+      arguments: { name: 'web_tabs', arguments: { action: 'list' } },
+    });
     expect(viaCall.isError).toBeFalsy();
     expect(upstream.calls.at(-1)?.name).toBe('browser_tabs');
-    const blocked = await client.callTool({ name: 'qa_call_tool', arguments: { name: 'web_run_code_unsafe', arguments: {} } });
+    const blocked = await client.callTool({
+      name: 'qa_call_tool',
+      arguments: { name: 'web_run_code_unsafe', arguments: {} },
+    });
     expect(blocked.isError).toBe(true);
     const direct = await client.callTool({ name: 'web_tabs', arguments: {} });
     expect(direct.isError).toBeFalsy(); // hidden tools are callable directly too; just not advertised
@@ -111,13 +139,19 @@ describe('gateway end-to-end (in-memory upstream)', () => {
 
   it('reports health with upstream state and era', async () => {
     const health = await client.callTool({ name: 'qa_health', arguments: {} });
-    const h = health.structuredContent as { ok: boolean; upstreams: Array<{ id: string; state: string; era: string; toolCount: number }> };
+    const h = health.structuredContent as {
+      ok: boolean;
+      upstreams: Array<{ id: string; state: string; era: string; toolCount: number }>;
+    };
     expect(h.ok).toBe(true);
     expect(h.upstreams[0]).toMatchObject({ id: 'playwright', state: 'healthy', era: 'legacy', toolCount: 7 });
   });
 
   it('validates native tool arguments', async () => {
-    const r = await client.callTool({ name: 'qa_run_finish', arguments: { run_id: 'nope', status: 'passed' } });
+    const r = await client.callTool({
+      name: 'qa_run_finish',
+      arguments: { run_id: 'nope', status: 'passed' },
+    });
     expect(r.isError).toBe(true);
     expect(text(r as never)).toContain('invalid_args');
   });
@@ -125,7 +159,9 @@ describe('gateway end-to-end (in-memory upstream)', () => {
 
 describe('gateway resilience', () => {
   it('caps oversized results with a marker', async () => {
-    const upstream = fakeUpstream({ onCall: () => ({ content: [{ type: 'text', text: 'x'.repeat(20_000) }] }) });
+    const upstream = fakeUpstream({
+      onCall: () => ({ content: [{ type: 'text', text: 'x'.repeat(20_000) }] }),
+    });
     const gateway = await testGateway({ upstream });
     const client = await connectClient(gateway);
     const r = await client.callTool({ name: 'web_snapshot', arguments: {} });
@@ -170,7 +206,9 @@ describe('gateway resilience', () => {
     await expect(
       testGateway({
         upstream,
-        mcpServers: { playwright: { command: 'fake', adapter: 'generic', prefix: 'qa_', tools: { allow: ['health'] } } },
+        mcpServers: {
+          playwright: { command: 'fake', adapter: 'generic', prefix: 'qa_', tools: { allow: ['health'] } },
+        },
       }),
     ).rejects.toThrow(/collision/);
   });

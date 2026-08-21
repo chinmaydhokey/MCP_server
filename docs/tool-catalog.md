@@ -69,19 +69,19 @@ Mints a run handle so that subsequent calls are grouped. Pass the handle in `_me
                                     "meta": { "type": "object" } },
   "required": [], "additionalProperties": false }
 // output
-{ "run_id": "rn_0198f3b2c4d07a1e9c6b5f4a3d2e1c0b", "expires_at": "2026-08-21T10:00:00Z" }
+{ "run_id": "rn_0198f3b2-c4d0-7a1e-9c6b-5f4a3d2e1c0b", "expires_at": "2026-08-21T10:00:00Z" }
 ```
 
-Handle format is `<kind>_<uuidv7>`; run handles expire after 24 hours and are owner-checked ([ADR-0005](./adr/0005-server-minted-handles-not-sessions.md)).
+Handle format is `<kind>_<uuidv7>` (hyphenated RFC 9562 form, as `uuidv7` 1.2.1 emits it); run handles expire after 24 hours and are owner-checked ([ADR-0005](./adr/0005-server-minted-handles-not-sessions.md)).
 
 ### `qa_run_finish`
 
 ```jsonc
 // input
 { "type": "object",
-  "properties": { "run_id": { "type": "string", "pattern": "^rn_[0-9a-f]{32}$" },
-                  "status": { "enum": ["passed", "failed", "aborted"] },
-                  "summary": { "type": "string", "maxLength": 4000 } },
+  "properties": { "run_id": { "type": "string", "pattern": "^rn_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+                  "status": { "enum": ["passed", "failed", "cancelled", "error"] },
+                  "summary": { "type": "object" } },
   "required": ["run_id", "status"], "additionalProperties": false }
 // output
 { "run_id": "rn_…", "status": "passed", "steps": 14, "errors": 1, "duration_ms": 38210 }
@@ -188,7 +188,7 @@ Registered so that clients, docs, and tests can reference stable names. Each ret
 
 | Name | Purpose | Milestone |
 |---|---|---|
-| `qa_test_run` | Deterministic replay of a stored test: cache `HIT` replays the stored locator without an LLM call, `MISS` re-resolves, `HEALED` goes through the proposal pipeline | M2 |
+| `qa_run_test` | Deterministic replay of a stored test: cache `HIT` replays the stored locator without an LLM call, `MISS` re-resolves, `HEALED` goes through the proposal pipeline | M2 |
 | `qa_heal_list`, `qa_heal_show`, `qa_heal_review` | Inspect proposals with evidence; approve or reject; rejected candidates are excluded forever from scoring | M3 |
 | `qa_run_suite` | Runs a selection across platforms. Returns a `CreateTaskResult` (`taskId = run_id`, `pollIntervalMs: 2000`, `ttlMs: 86400000`) when the client declares the [`io.modelcontextprotocol/tasks`](https://modelcontextprotocol.io/extensions/tasks/overview) extension in `_meta`, otherwise runs inline with `notifications/progress`; `idempotency_key` is unique per project | M5 |
 | `qa_visual_compare` | pixelmatch baseline diff for a step or page, threshold per test | M3 |

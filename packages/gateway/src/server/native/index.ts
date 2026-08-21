@@ -1,7 +1,7 @@
 import { HANDLE_KINDS } from '@qa-brain/core';
 import { z } from 'zod';
 import { RUN_ID_META_KEY } from '../../router/router.js';
-import { type NativeTool, defineNativeTool, errorResult, jsonResult } from '../define-native-tool.js';
+import { defineNativeTool, errorResult, jsonResult, type NativeTool } from '../define-native-tool.js';
 
 const RUN_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -50,12 +50,17 @@ export const qaRunStart = defineNativeTool({
     'Start a run and get a run_id handle. Pass run_id to later calls (as the run_id argument where accepted, or in _meta["in.qabrain/runId"]) so every action is grouped in run history.',
   inputSchema: z.object({
     name: z.string().min(1).max(200).optional().describe('Human-readable run name'),
-    meta: z.record(z.string(), z.unknown()).optional().describe('Free-form metadata (branch, commit, trigger)'),
+    meta: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe('Free-form metadata (branch, commit, trigger)'),
   }),
   status: 'implemented',
   listed: true,
   async handler(args, ctx, services) {
-    const handle = await services.store.handles.mint('run', ctx.principal, RUN_TTL_MS, { name: args.name ?? null });
+    const handle = await services.store.handles.mint('run', ctx.principal, RUN_TTL_MS, {
+      name: args.name ?? null,
+    });
     const run = await services.store.runs.create({
       id: handle.handle,
       name: args.name ?? null,
@@ -63,13 +68,19 @@ export const qaRunStart = defineNativeTool({
       meta: args.meta ?? {},
       trigger: 'manual',
     });
-    return jsonResult({ run_id: run.id, status: run.status, createdAt: run.createdAt, metaKey: RUN_ID_META_KEY });
+    return jsonResult({
+      run_id: run.id,
+      status: run.status,
+      createdAt: run.createdAt,
+      metaKey: RUN_ID_META_KEY,
+    });
   },
 });
 
 export const qaRunFinish = defineNativeTool({
   name: 'qa_run_finish',
-  description: 'Finish a run with a status and optional summary. Returns the action count and error count recorded for the run.',
+  description:
+    'Finish a run with a status and optional summary. Returns the action count and error count recorded for the run.',
   inputSchema: z.object({
     run_id: runIdSchema,
     status: z.enum(['passed', 'failed', 'cancelled', 'error']),
@@ -79,18 +90,32 @@ export const qaRunFinish = defineNativeTool({
   listed: true,
   async handler(args, ctx, services) {
     const owned = await services.store.handles.resolve(args.run_id, ctx.principal);
-    if (!owned) return errorResult('invalid_args', `run ${args.run_id} is unknown, expired, or owned by another principal`);
-    const run = await services.store.runs.finish(args.run_id, { status: args.status, summary: args.summary ?? null });
+    if (!owned)
+      return errorResult(
+        'invalid_args',
+        `run ${args.run_id} is unknown, expired, or owned by another principal`,
+      );
+    const run = await services.store.runs.finish(args.run_id, {
+      status: args.status,
+      summary: args.summary ?? null,
+    });
     if (!run) return errorResult('invalid_args', `run ${args.run_id} not found`);
     const counts = await services.store.actionLog.count(args.run_id);
     await services.store.handles.revoke(args.run_id);
-    return jsonResult({ run_id: run.id, status: run.status, finishedAt: run.finishedAt, actions: counts.total, errors: counts.errors });
+    return jsonResult({
+      run_id: run.id,
+      status: run.status,
+      finishedAt: run.finishedAt,
+      actions: counts.total,
+      errors: counts.errors,
+    });
   },
 });
 
 export const qaRunLog = defineNativeTool({
   name: 'qa_run_log',
-  description: 'List the actions recorded for a run (tool, duration, error) newest first. Arguments are redacted; use this to review what happened.',
+  description:
+    'List the actions recorded for a run (tool, duration, error) newest first. Arguments are redacted; use this to review what happened.',
   inputSchema: z.object({
     run_id: runIdSchema,
     limit: z.number().int().min(1).max(200).default(50),
@@ -104,7 +129,11 @@ export const qaRunLog = defineNativeTool({
     if (!run || (!owned && run.principal !== ctx.principal)) {
       return errorResult('invalid_args', `run ${args.run_id} is unknown or owned by another principal`);
     }
-    const rows = await services.store.actionLog.query({ runId: args.run_id, limit: args.limit, offset: args.offset });
+    const rows = await services.store.actionLog.query({
+      runId: args.run_id,
+      limit: args.limit,
+      offset: args.offset,
+    });
     return jsonResult({
       run_id: args.run_id,
       status: run.status,
@@ -130,7 +159,10 @@ export const qaSearchTools = defineNativeTool({
   description:
     'Search every tool QA Brain knows — including hidden ones that are not in the default list (tabs, network requests, generate_locator, drag/drop, file upload…). Returns names and summaries; use qa_describe_tool for the schema and qa_call_tool to invoke a hidden tool.',
   inputSchema: z.object({
-    query: z.string().default('').describe('Space-separated terms matched against name and description; empty lists everything'),
+    query: z
+      .string()
+      .default('')
+      .describe('Space-separated terms matched against name and description; empty lists everything'),
     includeHidden: z.boolean().default(true),
   }),
   status: 'implemented',
@@ -191,7 +223,12 @@ export const qaCallTool = defineNativeTool({
   listed: true,
   async handler(args, ctx, services) {
     if (args.name === 'qa_call_tool') return errorResult('invalid_args', 'qa_call_tool cannot call itself');
-    return services.call({ name: args.name, args: args.arguments, signal: ctx.signal, ctx: { ...ctx, depth: ctx.depth + 1 } });
+    return services.call({
+      name: args.name,
+      args: args.arguments,
+      signal: ctx.signal,
+      ctx: { ...ctx, depth: ctx.depth + 1 },
+    });
   },
 });
 
@@ -215,11 +252,18 @@ export const stubs: NativeTool[] = [
     'Persist an intent-level test (qabrain/test/v1 YAML) and its current locator fingerprints',
     z.object({ key: z.string(), yaml: z.string(), run_id: runIdSchema.optional() }),
   ),
-  stub('qa_test_get', 'Fetch a stored test by key, with its current revision and resolved cache', z.object({ key: z.string() })),
+  stub(
+    'qa_test_get',
+    'Fetch a stored test by key, with its current revision and resolved cache',
+    z.object({ key: z.string() }),
+  ),
   stub(
     'qa_test_list',
     'List stored tests with status (active/quarantined/disabled) and last outcome',
-    z.object({ tag: z.string().optional(), status: z.enum(['active', 'quarantined', 'disabled']).optional() }),
+    z.object({
+      tag: z.string().optional(),
+      status: z.enum(['active', 'quarantined', 'disabled']).optional(),
+    }),
   ),
   stub(
     'qa_heal_locator',
@@ -238,4 +282,12 @@ export const stubs: NativeTool[] = [
   ),
 ];
 
-export const nativeTools: NativeTool[] = [qaHealth, qaRunStart, qaRunFinish, qaRunLog, qaSearchTools, qaDescribeTool, qaCallTool];
+export const nativeTools: NativeTool[] = [
+  qaHealth,
+  qaRunStart,
+  qaRunFinish,
+  qaRunLog,
+  qaSearchTools,
+  qaDescribeTool,
+  qaCallTool,
+];
