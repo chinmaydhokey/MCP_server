@@ -12,7 +12,7 @@ This catalog lists every tool an LLM can see or call through the QA Brain gatewa
 | Native tools | `qa_*` | Design decision |
 | Future mobile tools | `mobile_*` (appium-mcp upstream, `appium_` stripped where present) | [ADR-0015](./adr/0015-mobile-via-appium-mcp-synthesized-refs-android-first.md) |
 | Collisions | Two public names equal, or a proxied name equal to a native name → startup error listing both sources; no shadowing, no silent rename | [Docker MCP Gateway v0.43.1](https://github.com/docker/mcp-gateway/releases/tag/v0.43.1) rule |
-| Ordering | `tools/list` sorted by name, `ttlMs: 300000`, `cacheScope: 'public'` | Deterministic order improves prompt-cache hits ([changelog](https://modelcontextprotocol.io/specification/2026-07-28/changelog)) |
+| Ordering | `tools/list` is always sorted by name; the cache hints `ttlMs: 300000` / `cacheScope: 'public'` are declared through `ServerOptions.cacheHints` and are emitted on **modern (2026-07-28) connections**, which is where the spec requires them — a legacy-era client negotiating `initialize` receives the sorted list without them | Deterministic order improves prompt-cache hits ([changelog](https://modelcontextprotocol.io/specification/2026-07-28/changelog)) |
 | Removal | Names are never removed from `tools/list` while the process lives; an unhealthy upstream answers with `isError` instead | Stale-history problem ([discussion #2036](https://github.com/modelcontextprotocol/modelcontextprotocol/discussions/2036)) |
 
 The mapping functions live in `packages/core/src/tool-name.ts` (`toPublicToolName`, `toUpstreamToolName`, `assertValidToolName`). See [ADR-0004](./adr/0004-tool-namespacing-and-curated-surface.md).
