@@ -1,0 +1,17 @@
+{
+  "name": "@qa-brain/example-demo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Headed walkthrough: watch QA Brain drive a real browser end to end",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "start": "node live-demo.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@qa-brain/core": "workspace:*",
+    "@qa-brain/gateway": "workspace:*",
+    "@qa-brain/store": "workspace:*"
+  }
+}

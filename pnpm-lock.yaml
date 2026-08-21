@@ -55,6 +55,21 @@ importers:
         specifier: 2.0.0
         version: 2.0.0
 
+  examples/demo:
+    dependencies:
+      '@modelcontextprotocol/client':
+        specifier: 2.0.0
+        version: 2.0.0
+      '@qa-brain/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@qa-brain/gateway':
+        specifier: workspace:*
+        version: link:../../packages/gateway
+      '@qa-brain/store':
+        specifier: workspace:*
+        version: link:../../packages/store
+
   examples/static-site: {}
 
   packages/adapter-playwright:

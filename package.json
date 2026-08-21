@@ -21,6 +21,7 @@
     "test": "vitest run --project unit",
     "test:e2e": "vitest run --project e2e",
     "smoke": "vitest run --project e2e",
+    "demo": "pnpm --filter @qa-brain/example-demo start",
     "doctor": "node apps/qa-brain/dist/cli.js doctor",
     "changeset": "changeset",
     "clean": "pnpm -r exec rm -rf dist .turbo"
